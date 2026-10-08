@@ -55,6 +55,17 @@ describe('"Ask this session" is the only Ask AI provider when present', () => {
     }
   });
 
+  it('a Qwen Code session picks its dedicated qwen-sdk provider by origin', () => {
+    const providers = [
+      { id: 'claude-agent-sdk', name: 'claude-agent-sdk', models: [{ id: 'opus', label: 'Opus', default: true }] },
+      { id: 'qwen-sdk', name: 'qwen-sdk', models: [{ id: 'qwen3-coder', label: 'Qwen3 Coder', default: true }] },
+    ];
+    expect(resolveAIProviderSelection({ providers, origin: 'qwen-code', settings: settings() })).toEqual({
+      providerId: 'qwen-sdk',
+      model: 'qwen3-coder',
+    });
+  });
+
   it('without a bridge the existing order is unchanged, even with a stale saved bridge pick', () => {
     expect(resolveAIProviderSelection({ providers: sdkProviders, origin: 'pi', settings: settings() }).providerId).toBe('pi-sdk');
     expect(

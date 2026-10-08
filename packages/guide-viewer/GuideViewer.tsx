@@ -41,6 +41,7 @@ const AUTHORED_ENGINE_LABEL: Record<string, string> = {
   'kiro-cli': 'Kiro CLI',
   amp: 'Amp',
   droid: 'Droid',
+  'qwen-code': 'Qwen Code',
 };
 
 /**

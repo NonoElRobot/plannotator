@@ -1,0 +1,29 @@
+{
+  "description": "Plannotator for Qwen Code. The PermissionRequest hook on exit_plan_mode opens the plan review UI: a deny returns the feedback to the model right away, while an approve is confirmed once more in the terminal, because Qwen Code always shows its own plan confirmation for exit_plan_mode and ignores a hook allow there. Note: a PreToolUse hook does NOT fire on exit_plan_mode in Qwen Code (verified 2026-10-08), so it cannot be used to hold the model's turn. The PreToolUse hook on enter_plan_mode injects the Plannotator Flavored Markdown reminder when the pfmReminder setting is enabled (silent passthrough otherwise).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "enter_plan_mode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "plannotator improve-context",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "exit_plan_mode",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "plannotator",
+            "timeout": 345600000
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -35,3 +35,11 @@ describe("pi vs oh-my-pi are distinct origins", () => {
     expect(AGENT_CONFIG["oh-my-pi"].name).toBe("Oh My Pi");
   });
 });
+
+describe("qwen-code", () => {
+  test("resolves name, badge and its dedicated Ask AI provider", () => {
+    expect(getAgentName("qwen-code")).toBe("Qwen Code");
+    expect(getAgentBadge("qwen-code")).toBe("bg-indigo-500/15 text-indigo-400");
+    expect(getAgentAIProviderTypes("qwen-code")).toEqual(["qwen-sdk"]);
+  });
+});

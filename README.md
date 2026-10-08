@@ -28,7 +28,8 @@
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset=".github/assets/icons/pi-dark.svg" />
     <img src=".github/assets/icons/pi-light.svg" alt="Pi" title="Pi" height="28" />
-  </picture>
+  </picture>&nbsp;&nbsp;
+  <img src=".github/assets/icons/qwen.svg" alt="Qwen Code" title="Qwen Code" height="28" />
 </p>
 
 <p align="center">
@@ -37,7 +38,7 @@
 
 # Plannotator
 
-Plannotator is a local, browser-based review surface for AI coding agents: Claude Code, Codex, Copilot CLI, Gemini CLI, OpenCode, Kiro, Droid, Amp, and Pi. 
+Plannotator is a local, browser-based review surface for AI coding agents: Claude Code, Codex, Copilot CLI, Gemini CLI, OpenCode, Kiro, Droid, Amp, Pi, and Qwen Code.
 
 **It plugs directly into your agent** through its hooks and commands. When the agent proposes a plan, html, or finishes writing code, the work opens in your browser and you mark it up, comment, and send feedback directly to the agent for it to act on it.
 
@@ -233,6 +234,7 @@ Then finish the step for your agent:
 | **Kiro CLI** | Nothing. Skills and an example agent are installed automatically. Try `kiro-cli chat --agent plannotator`. | [README](apps/kiro-cli/README.md) |
 | **OpenCode** | Add `"plugin": ["@plannotator/opencode@latest"]` to `opencode.json`. Restart OpenCode. | [README](apps/opencode-plugin/README.md) |
 | **Pi** | Skip the installer. Just `pi install npm:@plannotator/pi-extension`. Start Pi with `--plan`, or toggle with `/plannotator-plan-mode`. | [README](apps/pi-extension/README.md) |
+| **Qwen Code** | Nothing. The native extension (plan review on `exit_plan_mode` + `/plannotator-review`, `/plannotator-annotate`, `/plannotator-last` skills) is installed automatically with `qwen extensions install`. Restart Qwen Code. Requires the `qwen` CLI (`npm install -g @qwen-code/qwen-code`). | [README](apps/qwen-code/README.md) |
 
 **Updating:** run the installer again for the binary and slash commands. Claude Code plugin: `claude plugin marketplace update plannotator`, then `claude plugin update plannotator@plannotator`, then restart Claude Code (refreshing the marketplace alone does not update the plugin). Pi: `pi update --extensions` (a plain `pi update` updates only Pi).
 
@@ -495,7 +497,7 @@ implementation architecture.
 | `PLANNOTATOR_SHARE` | `disabled` to turn off URL sharing |
 | `PLANNOTATOR_SHARE_URL` | Custom base URL for share links (self-hosted portal) |
 | `PLANNOTATOR_PASTE_URL` | Base URL of the paste service API |
-| `PLANNOTATOR_ORIGIN` | Override agent detection: `claude-code`, `amp`, `droid`, `opencode`, `codex`, `copilot-cli`, `gemini-cli`, `kiro-cli`, `pi` |
+| `PLANNOTATOR_ORIGIN` | Override agent detection: `claude-code`, `amp`, `droid`, `opencode`, `codex`, `copilot-cli`, `gemini-cli`, `kiro-cli`, `qwen-code`, `pi` |
 | `PLANNOTATOR_JINA` | `0`/`false` to disable Jina Reader for URL annotation |
 | `JINA_API_KEY` | Jina Reader API key for higher rate limits |
 | `PLANNOTATOR_DATA_DIR` | Base directory for Plannotator-managed files (plans, history, drafts, `config.json`). Default: `~/.plannotator`; if that directory doesn't exist and `$XDG_DATA_HOME` is set to an absolute path, `$XDG_DATA_HOME/plannotator` is used instead |

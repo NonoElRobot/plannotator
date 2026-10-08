@@ -198,6 +198,7 @@ import {
   resolveCodexStopPlan,
 } from "./codex-session";
 import { findCopilotPlanContent, findCopilotSessionByAncestorPids, findCopilotSessionForCwd, getRecentCopilotMessages } from "./copilot-session";
+import { findQwenSessionLog, getRecentQwenMessages } from "./qwen-session";
 import { resolveLatestVibePlan } from "./vibe-plan";
 import { resolveClaudePlan } from "./claude-plan";
 import {
@@ -702,6 +703,7 @@ const pasteApiUrl = process.env.PLANNOTATOR_PASTE_URL || undefined;
 //   > Copilot CLI (COPILOT_CLI)
 //   > OpenCode (OPENCODE)
 //   > Gemini CLI (GEMINI_CLI)
+//   > Qwen Code (QWEN_CODE)
 //   > oh-my-pi harness (OMPCODE) — checked last because OMP exports OMPCODE
 //     into every shell it spawns; runtimes launched from an OMP session must
 //     still be detected as themselves. OMPCODE still wins over the terminal
@@ -721,6 +723,7 @@ const detectedOrigin: Origin =
   process.env.COPILOT_CLI ? "copilot-cli" :
   process.env.OPENCODE ? "opencode" :
   process.env.GEMINI_CLI ? "gemini-cli" :
+  process.env.QWEN_CODE ? "qwen-code" :
   process.env.OMPCODE ? "oh-my-pi" :
   "claude-code";
 
@@ -1698,6 +1701,7 @@ if (args[0] === "sessions") {
   const isDroid = detectedOrigin === "droid";
   const isCopilot = detectedOrigin === "copilot-cli";
   const isVibe = detectedOrigin === "mistral-vibe";
+  const isQwen = detectedOrigin === "qwen-code";
 
   // Collect up to N recent assistant messages so the user can pick the right
   // one — defaults to the same selection as the legacy "last message"
@@ -1714,7 +1718,7 @@ if (args[0] === "sessions") {
   // earlier branch claims the invocation.
   let copilotLockSessionDir: string | null = null;
   let copilotSessionDir: string | null = null;
-  if (!stdinFlag && !isCodex && !isDroid && !isVibe) {
+  if (!stdinFlag && !isCodex && !isDroid && !isVibe && !isQwen) {
     copilotLockSessionDir = findCopilotSessionByAncestorPids();
     copilotSessionDir = copilotLockSessionDir ??
       (isCopilot ? findCopilotSessionForCwd(projectRoot) : null);
@@ -1816,6 +1820,22 @@ if (args[0] === "sessions") {
     if (vibeLog) {
       recentMessages = getRecentVibeMessages(vibeLog, RECENT_MESSAGES_LIMIT)
         .map((m) => ({ messageId: m.messageId, text: m.text, lineNumbers: [], timestamp: m.timestamp }));
+      lastMessage = recentMessages[0] ?? null;
+    }
+  } else if (isQwen) {
+    // Qwen Code path: the session log is addressed directly by the two
+    // process env vars Qwen sets at session start
+    // (QWEN_CODE_PROJECT_DIR + QWEN_CODE_SESSION_ID), so no metadata scan is
+    // needed; the fallback is the newest chat of the sanitized cwd project.
+    if (process.env.PLANNOTATOR_DEBUG) {
+      console.error(`[DEBUG] Qwen Code detected, project root: ${projectRoot}`);
+    }
+    const qwenLog = findQwenSessionLog({ cwd: projectRoot });
+    if (process.env.PLANNOTATOR_DEBUG) {
+      console.error(`[DEBUG] Qwen selected log: ${qwenLog ?? "(none)"}`);
+    }
+    if (qwenLog) {
+      recentMessages = getRecentQwenMessages(qwenLog, RECENT_MESSAGES_LIMIT);
       lastMessage = recentMessages[0] ?? null;
     }
   } else {

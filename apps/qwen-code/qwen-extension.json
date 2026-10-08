@@ -1,0 +1,5 @@
+{
+  "name": "plannotator",
+  "description": "Interactive plan review, code review and document annotation: opens Plannotator's browser UI on exit_plan_mode and through the /plannotator-review, /plannotator-annotate and /plannotator-last skills, and returns the reviewer's decision to the agent.",
+  "version": "0.28.7"
+}

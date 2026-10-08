@@ -214,6 +214,7 @@ describe("getPlanDeniedPrompt", () => {
     expect(make("pi")).toBe(cc);
     expect(make("copilot-cli")).toBe(cc);
     expect(make("gemini-cli")).toBe(cc);
+    expect(make("qwen-code")).toBe(cc);
   });
 });
 
@@ -756,6 +757,7 @@ describe("getPlanToolName", () => {
     expect(getPlanToolName("copilot-cli")).toBe("exit_plan_mode");
     expect(getPlanToolName("pi")).toBe("plannotator_submit_plan");
     expect(getPlanToolName("gemini-cli")).toBe("exit_plan_mode");
+    expect(getPlanToolName("qwen-code")).toBe("exit_plan_mode");
     // oh-my-pi has no planning integration yet; this entry only keeps the
     // Claude Code convention as its fallback until one lands.
     expect(getPlanToolName("oh-my-pi")).toBe("ExitPlanMode");

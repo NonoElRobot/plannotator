@@ -20,6 +20,9 @@ param(
     [switch]$SkipKiro,
     [switch]$SkipVibe,
     [switch]$SkipOpencode,
+    # Opt-out for the Qwen Code integration (the native extension installed
+    # with `qwen extensions install`). Mirrors install.sh's --skip-qwen.
+    [switch]$SkipQwen,
     # Same shape as the per-agent switches, but scoped to the skills/slash
     # command sparse checkout rather than one agent's home: -SkipSkills turns
     # the whole fetch into a no-op for every scope it writes (Claude,
@@ -228,6 +231,7 @@ function Write-InstallFlags {
     if ($SkipKiro) { $ids += "skip-kiro" }
     if ($SkipVibe) { $ids += "skip-vibe" }
     if ($SkipOpencode) { $ids += "skip-opencode" }
+    if ($SkipQwen) { $ids += "skip-qwen" }
     if ($SkipSkills) { $ids += "skip-skills" }
     $quoted = ($ids | ForEach-Object { '"' + $_ + '"' }) -join ","
     $path = Join-Path $configDir "install-flags.json"
@@ -401,6 +405,7 @@ $skipGeminiResolved = $false; $skipGeminiSource = ""
 $skipKiroResolved = $false;   $skipKiroSource = ""
 $skipVibeResolved = $false;   $skipVibeSource = ""
 $skipOpencodeResolved = $false; $skipOpencodeSource = ""
+$skipQwenResolved = $false;   $skipQwenSource = ""
 # skipInstall.skills is not an agent - it opts out of the skills/slash-command
 # checkout for every scope at once - but it shares the same three layers.
 $skipSkillsResolved = $false; $skipSkillsSource = ""
@@ -419,6 +424,9 @@ if ($cfg -and $cfg.skipInstall) {
     }
     if ($cfg.skipInstall.opencode -is [bool] -and $cfg.skipInstall.opencode) {
         $skipOpencodeResolved = $true; $skipOpencodeSource = "config skipInstall.opencode"
+    }
+    if ($cfg.skipInstall.qwen -is [bool] -and $cfg.skipInstall.qwen) {
+        $skipQwenResolved = $true; $skipQwenSource = "config skipInstall.qwen"
     }
     if ($cfg.skipInstall.skills -is [bool] -and $cfg.skipInstall.skills) {
         $skipSkillsResolved = $true; $skipSkillsSource = "config skipInstall.skills"
@@ -449,6 +457,11 @@ if ($env:PLANNOTATOR_SKIP_OPENCODE_INSTALL -match '^(1|true|yes)$') {
 } elseif ($env:PLANNOTATOR_SKIP_OPENCODE_INSTALL -match '^(0|false|no)$') {
     $skipOpencodeResolved = $false; $skipOpencodeSource = ""
 }
+if ($env:PLANNOTATOR_SKIP_QWEN_INSTALL -match '^(1|true|yes)$') {
+    $skipQwenResolved = $true; $skipQwenSource = "PLANNOTATOR_SKIP_QWEN_INSTALL"
+} elseif ($env:PLANNOTATOR_SKIP_QWEN_INSTALL -match '^(0|false|no)$') {
+    $skipQwenResolved = $false; $skipQwenSource = ""
+}
 if ($env:PLANNOTATOR_SKIP_SKILLS_INSTALL -match '^(1|true|yes)$') {
     $skipSkillsResolved = $true; $skipSkillsSource = "PLANNOTATOR_SKIP_SKILLS_INSTALL"
 } elseif ($env:PLANNOTATOR_SKIP_SKILLS_INSTALL -match '^(0|false|no)$') {
@@ -459,6 +472,7 @@ if ($SkipGemini) { $skipGeminiResolved = $true; $skipGeminiSource = "-SkipGemini
 if ($SkipKiro)   { $skipKiroResolved = $true;   $skipKiroSource = "-SkipKiro" }
 if ($SkipVibe)   { $skipVibeResolved = $true;   $skipVibeSource = "-SkipVibe" }
 if ($SkipOpencode) { $skipOpencodeResolved = $true; $skipOpencodeSource = "-SkipOpencode" }
+if ($SkipQwen) { $skipQwenResolved = $true; $skipQwenSource = "-SkipQwen" }
 if ($SkipSkills) { $skipSkillsResolved = $true; $skipSkillsSource = "-SkipSkills" }
 
 # Pre-flight: if verification is requested, reject tags older than the first
@@ -816,6 +830,12 @@ if (Test-Path $codexDir) {
 $codexAvailable = [bool](Get-Command codex -ErrorAction SilentlyContinue) -or $codexHomeHasUserConfig
 # Kiro is auto-detected like Codex/Gemini: PATH executable or an existing ~/.kiro.
 $kiroAvailable = [bool](Get-Command kiro-cli -ErrorAction SilentlyContinue) -or (Test-Path "$env:USERPROFILE\.kiro")
+# Qwen Code (QwenLM/qwen-code) stores config and state under $env:QWEN_HOME when
+# set, falling back to ~\.qwen. Detected like Kiro: PATH executable or an
+# existing home. The integration is the native extension installed with
+# `qwen extensions install` from apps\qwen-code.
+$qwenHome = if ($env:QWEN_HOME) { $env:QWEN_HOME } else { Join-Path $env:USERPROFILE ".qwen" }
+$qwenAvailable = [bool](Get-Command qwen -ErrorAction SilentlyContinue) -or (Test-Path $qwenHome)
 # Vibe (Mistral's TUI coding agent) stores everything under $VIBE_HOME when set,
 # falling back to ~/.vibe. Detected only when that home exists, matching
 # install.sh: a `vibe` executable on PATH alone is not enough (Vibe creates its
@@ -912,6 +932,15 @@ if ($vibeAvailable -and $skipVibeResolved) {
     Write-Host "The Vibe-specific skills are not installed on Windows. Vibe picks up the"
     Write-Host "shared review and annotate skills from ~/.agents/skills instead;"
     Write-Host "/plannotator-last is not supported for Vibe on Windows yet."
+}
+
+# Qwen Code opt-out: the extension is fetched from the same checkout as the
+# skills, so a skills opt-out also leaves it uninstalled - the QWEN CODE USERS
+# section in the closing banner covers both cases.
+if ($qwenAvailable -and $skipQwenResolved) {
+    Write-Host ""
+    Write-Host "Qwen Code: detected, skipped ($skipQwenSource)."
+    Write-Host "No extension was installed or removed."
 }
 
 # Clear OpenCode plugin cache. Both OpenCode generations root their cache at
@@ -1316,7 +1345,7 @@ try {
             # plain-clone fallback (#1238): that git has no sparse-checkout
             # subcommand, and the full checkout needs no narrowing.
             if ($sparseClone) {
-                & { $local:ErrorActionPreference = 'Continue'; git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands 2>$null }
+                & { $local:ErrorActionPreference = 'Continue'; git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code 2>$null }
             }
 
             # Claude Code and Codex consume different skill bodies. Claude Code
@@ -1404,6 +1433,25 @@ try {
                     New-Item -ItemType Directory -Force -Path $geminiCommandsDir | Out-Null
                     Copy-Item -Force "apps\gemini\commands\*.toml" $geminiCommandsDir
                     Write-Host "Installed Gemini slash commands to $geminiCommandsDir\"
+                }
+            }
+
+            # Qwen Code extension - native integration for Qwen Code
+            # (QwenLM/qwen-code): plan-review hook on exit_plan_mode plus the
+            # /plannotator-* skills, wired through `qwen extensions install`
+            # from the checkout. It replaces any earlier (possibly hand-made)
+            # plannotator extension, so uninstall first: a missing extension
+            # exits non-zero and is harmless.
+            if ((Get-Command qwen -ErrorAction SilentlyContinue) -and -not $skipQwenResolved -and (Test-Path "apps\qwen-code\qwen-extension.json")) {
+                & { $local:ErrorActionPreference = 'Continue'; qwen extensions uninstall plannotator 2>$null }
+                $qwenInstallOk = $false
+                & { $local:ErrorActionPreference = 'Continue'; qwen extensions install "$PWD\apps\qwen-code" --consent }
+                $qwenInstallOk = ($LASTEXITCODE -eq 0)
+                if ($qwenInstallOk) {
+                    Write-Host "Installed the Qwen Code extension (plan review + /plannotator-* commands)"
+                } else {
+                    Write-Host "Warning: the Qwen Code extension could not be installed. Re-run manually:"
+                    Write-Host "  qwen extensions install $PWD\apps\qwen-code --consent"
                 }
             }
         } finally {
@@ -1684,6 +1732,29 @@ if ($vibeAvailable) {
         Write-Host "plan-review hook is macOS/Linux-only; see the manual setup instructions"
         Write-Host "printed above to wire plan review on a macOS/Linux box."
         Write-Host "Note: improve-context (plan-mode enrichment) is not wired for Vibe."
+    }
+}
+if ($qwenAvailable) {
+    Write-Host ""
+    Write-Host "=========================================="
+    Write-Host "  QWEN CODE USERS"
+    Write-Host "=========================================="
+    Write-Host ""
+    if ($skipQwenResolved) {
+        Write-Host "Qwen Code was detected, but the extension was skipped ($skipQwenSource)."
+        Write-Host "Re-run without the opt-out to install it."
+    } elseif ($skipSkillsResolved) {
+        Write-Host "Qwen Code was detected, but skills were skipped ($skipSkillsSource),"
+        Write-Host "so the extension source was not fetched and no extension was installed."
+        Write-Host "Re-run without the opt-out to install it."
+    } elseif (-not (Get-Command qwen -ErrorAction SilentlyContinue)) {
+        Write-Host "Qwen Code was detected (a ~/.qwen or `$QWEN_HOME directory exists), but the"
+        Write-Host "qwen binary was not found on PATH, so no extension was installed."
+        Write-Host "Install Qwen Code (npm install -g @qwen-code/qwen-code) and re-run the installer."
+    } else {
+        Write-Host "Restart Qwen Code. Plans open in your browser for review on"
+        Write-Host "exit_plan_mode, and the /plannotator-review, /plannotator-annotate,"
+        Write-Host "and /plannotator-last commands are ready."
     }
 }
 Write-Host ""

@@ -38,6 +38,11 @@ plannotator/
 │   ├── kiro-cli/                 # Kiro CLI integration source (consumed by scripts/install.sh; auto-detected via ~/.kiro)
 │   │   ├── agents/plannotator.json   # Example Kiro custom agent
 │   │   └── skills/               # Kiro-specific skill packages (review, annotate); setup-goal + visual-explainer install from apps/skills/extra
+│   ├── qwen-code/                # Qwen Code extension source (consumed by scripts/install.sh; auto-detected via the qwen binary; installed with `qwen extensions install`)
+│   │   ├── qwen-extension.json   # Extension manifest (name: plannotator)
+│   │   ├── hooks/hooks.json      # PermissionRequest on exit_plan_mode → `plannotator` (classic blocking plan review) + PreToolUse on enter_plan_mode → `plannotator improve-context` (PFM reminder)
+│   │   ├── skills/               # Qwen-specific skills (review, annotate, last) with PLANNOTATOR_ORIGIN=qwen-code baked in
+│   │   └── README.md             # Install and local development notes
 │   ├── paste-service/            # Paste service for short URL sharing
 │   │   ├── core/                 # Platform-agnostic logic (handler, storage interface, cors)
 │   │   ├── stores/               # Storage backends (fs, kv, s3)
@@ -168,7 +173,7 @@ claude --plugin-dir ./apps/hook
 | `PLANNOTATOR_SESSION_TAG` | Set by the Claude Code mod in its session's environment (`claude-code:<session id>`), so processes the session starts can be matched to it; recorded as `hostSession` in the `sessions/` registry. Not meant to be set by hand. |
 | `PLANNOTATOR_HOST_REVIEW_ID` | Set per launch by the Claude Code mod and the OpenCode plugin to the review's `pn-` id; the CLI takes it at startup (validated `pn-` + 6 hex, scrubbed from the environment) and records it as `reviewId` in the `sessions/` registry, which `plannotator sessions` (and `--json`) prints beside each session's full `target`. Not meant to be set by hand. |
 | `PLANNOTATOR_MOD_DEBUG` | Set to `1` before starting Claude Code to have the Claude Code mod write `claude-code-mod/debug.log` in the data dir (launches, results, turns, bridge commands). Default: off. |
-| `PLANNOTATOR_ORIGIN` | Explicit agent-origin override at the top of the detection chain. Valid values: `claude-code`, `amp`, `droid`, `opencode`, `codex`, `copilot-cli`, `gemini-cli`, `kiro-cli`, `mistral-vibe`, `pi`, `oh-my-pi`. Invalid values silently fall through to env-based detection. Unset by default. |
+| `PLANNOTATOR_ORIGIN` | Explicit agent-origin override at the top of the detection chain. Valid values: `claude-code`, `amp`, `droid`, `opencode`, `codex`, `copilot-cli`, `gemini-cli`, `kiro-cli`, `mistral-vibe`, `qwen-code`, `pi`, `oh-my-pi`. Invalid values silently fall through to env-based detection. Unset by default. Qwen Code is auto-detected from its own environment (`QWEN_CODE`); this override is how a Qwen Code skill or transcript path is labeled `qwen-code` when detection does not see it. |
 | `PLANNOTATOR_JINA` | Set to `0` / `false` to disable Jina Reader for URL annotation, or `1` / `true` to enable. Default: enabled. Can also be set via `~/.plannotator/config.json` (`{ "jina": false }`) or per-invocation via `--no-jina`. |
 | `PLANNOTATOR_ANNOTATE_HISTORY` | Set to `0` / `false` to disable ALL annotate-session writes to the data dir: per-file version history (no copies of annotated files are written; the annotate version diff is unavailable) AND the durable submitted-feedback records (#678) that single-local-file annotate sessions otherwise write to `history/{project}/{slug}/submissions/` before deleting the draft on submit. Disabling it keeps annotate sessions fully stateless but also gives up that submit crash-recovery record. URL and annotate-last sessions never write either kind of data regardless of this flag. Folder sessions write no submitted-feedback records, but they do participate in per-file version history: the first time a session serves a file through /api/doc it snapshots that file (lazily, memoized per resolved path for the life of the server), which is what powers the per-file version diff when a folder file is reopened later; setting this flag to 0 disables those folder snapshots too. A review of several files (bundle) snapshots each of its text files when it opens, through the same pipeline, governed the same way. Setting it to 0 additionally suppresses **feedback archive** records for every annotate surface (single file, folder, URL, live app, annotate-last), so "fully stateless annotate session" stays literally true regardless of `PLANNOTATOR_FEEDBACK_HISTORY`, with one exception: annotation drafts (`drafts/`, including the path-keyed copies described under "Annotate drafts follow the file") are crash recovery and are still written; they are deleted when the review is decided. Raw-HTML and live-app pinpoints write their element context (selector, ancestor path, allowlisted attributes, visible text, a collapsed HTML skeleton, and the live route) into the submission records and drafts too; form values and inline handlers are never captured. Default: enabled. Can also be set via `~/.plannotator/config.json` (`{ "annotateHistory": false }`); the env var takes precedence. |
 | `PLANNOTATOR_FEEDBACK_HISTORY` | Set to `0` / `false` to stop archiving submitted feedback under `~/.plannotator/feedback/` (or `PLANNOTATOR_DATA_DIR`). Default: enabled, which appends one record per submission at decision-settlement time on all three surfaces and in both runtimes: plan approve/deny, code review Send Feedback / Approve (LGTM) / Close, and every annotate submit / approve / close. A review posted straight to GitHub, GitLab or Bitbucket with `POST /api/pr-action` is delivered to the platform and is not archived locally yet. **Note that this writes the user's own feedback text, the document and code excerpts it quotes, and per-annotation metadata to disk, and nothing prunes the directory** (same policy as `plans/`, `history/`, and `guides/`); delete `~/.plannotator/feedback/` or a project subdirectory to forget, or set this to 0 to never write. Code-review records carry diff IDENTITY only (vcsType, diffType, base, gitRef, snapshotId, cwd, PR metadata, changed-file count, patch byte count), never the patch bytes; plan records carry the decision text plus a reference to the `history/{project}/{slug}/NNN.md` version the decision was made on, never a second copy of the plan. Externally sourced annotations (linters, review agents, WebMCP browser agents) are included but keep their `source` / `author` tags, so `source == null` selects the reviewer's own comments; agent job outputs (guides, tours) are not archived. This knob governs only the new archive: the `planSave` decision snapshots in `plans/` and the #678 annotate submission records under `history/` are unaffected. Annotate surfaces honor `PLANNOTATOR_ANNOTATE_HISTORY` as well. Can also be set via `~/.plannotator/config.json` (`{ "feedbackHistory": false }`); the env var takes precedence. |
@@ -196,6 +201,7 @@ claude --plugin-dir ./apps/hook
 | `PLANNOTATOR_SKIP_KIRO_INSTALL` | **Read by the install scripts only.** Same opt-out shape for the Kiro CLI integration (`~/.kiro` skills and agent, including the `~/.kiro` stale-skill sweep). Config key: `skipInstall.kiro`; flag: `--skip-kiro`. Off by default. |
 | `PLANNOTATOR_SKIP_VIBE_INSTALL` | **Read by the install scripts only.** Same opt-out shape for the Mistral Vibe integration (`$VIBE_HOME` skills and the managed plan-review hook block in `$VIBE_HOME/hooks.toml`, plus the `~/.vibe` stale-skill sweep). Hooks are stable in Vibe 2.25+ (no config flag), so the installer writes only the `hooks.toml` block; its `command` is argv-only (absolute binary path, no env prefix) because Vibe's hook executor may be shell-free, and plannotator detects the Vibe origin from the hook payload (`pre_tool` + `exit_plan_mode`), with `PLANNOTATOR_ORIGIN=mistral-vibe` as the manual override. The hook is macOS/Linux-only, so the Windows installer never writes `hooks.toml` — it prints manual setup instructions, mirroring Codex-on-Windows. The Windows installers also skip the Vibe-specific skills (their `PLANNOTATOR_ORIGIN=mistral-vibe plannotator …` env-prefix only runs when Vibe's Windows shell tool resolves Git Bash, not on its PowerShell fallback), so they write nothing under `$VIBE_HOME`. Vibe still reads the shell-neutral core skills from `~/.agents/skills`, so `/plannotator-review` and `/plannotator-annotate` work there without a Vibe origin label; `/plannotator-last` is **not** supported for Vibe on Windows yet (with no `PLANNOTATOR_ORIGIN` it takes the Claude Code transcript path, so it fails or could read a Claude session in the same project). On Windows, Vibe counts as detected only when `$VIBE_HOME` exists, as in `install.sh`. Config key: `skipInstall.vibe`; flag: `--skip-vibe`. Off by default. |
 | `PLANNOTATOR_SKIP_OPENCODE_INSTALL` | **Read by the install scripts only.** Do-not-write switch for the OpenCode integration (command stubs under `~/.config/opencode/commands`, the OpenCode plugin cache clear, and the stale command-stub sweep). OpenCode has no detection leg, so there is no detected/not-detected reporting, just a skip note. Config key: `skipInstall.opencode`; flag: `--skip-opencode`. Off by default. |
+| `PLANNOTATOR_SKIP_QWEN_INSTALL` | **Read by the install scripts only.** Same opt-out shape for the Qwen Code integration (the native extension in `apps/qwen-code`, installed with `qwen extensions install <path> --consent` from the skills sparse checkout — an earlier install of the same extension is uninstalled first, and the install is best-effort: a failure prints the manual command and never fails the checkout). Qwen Code is detected when the `qwen` binary is on PATH or `~/.qwen` (or `$QWEN_HOME`) exists; detection alone installs nothing — the binary is required for the `qwen extensions install` call, so the closing "QWEN CODE USERS" banner has a dedicated branch saying the extension was not installed when a home dir exists without the binary. The extension also rides on `skip_skills`: with the skills checkout skipped there is no source to install from, and the banner says so. Config key: `skipInstall.qwen`; flag: `--skip-qwen` (PowerShell: `-SkipQwen`); precedence is flag > env var > config. Off by default. |
 | `PLANNOTATOR_SKIP_SKILLS_INSTALL` | **Read by the install scripts only.** Set to `1` / `true` to skip the skills/slash-command sparse checkout entirely — no `git clone` of the release tag, so nothing is written to any skill or command scope (`~/.claude/skills`, `~/.agents/skills`, the OpenCode command stubs, the Gemini `.toml` commands, `~/.kiro`), the extras are not offered, and the skill-scope cleanup sweeps stay suspended (skip means do-not-write, never remove). The binary, sem sidecar, agent-terminal runtime, hooks, and per-agent config still install, and git stops being a hard requirement. The installer reports `Skills: skipped (...)` and the closing banner stops claiming the `/plannotator-*` commands are ready. Unlike the per-agent opt-outs this is not one agent's home — it covers every scope the checkout writes. Config key: `skipInstall.skills`; flags: `--skip-skills` (bash/cmd), `-SkipSkills` (PowerShell); precedence is flag > env var > config. Used by the `install-script-smoke` CI job, which installs a synthetic `v9.9.9` whose tag has no GitHub counterpart. Off by default. |
 | `PLANNOTATOR_SKIP_AGENT_TERMINAL_INSTALL` | Set to `1` / `true` to skip installing the managed Node/WebTUI runtime used by compiled Bun builds for the annotate-mode agent terminal. Read by `plannotator install-runtime agent-terminal`, which the installers call automatically. |
 | `PLANNOTATOR_MINIMAL` | **Read by the install scripts only**, not by the runtime binary. Set to `1` / `true` / `yes` to have `scripts/install.sh` / `install.ps1` / `install.cmd` install **only** the `plannotator` binary, skipping the sem sidecar, the agent-terminal runtime, all per-agent skills, hooks, slash commands, and config, and the CallDiff runtime even when its opt-in is set. Equivalent to the `--minimal` (aliased to `--binary-only`) flag; `--no-minimal` overrides it. Off by default. |
@@ -209,7 +215,7 @@ claude --plugin-dir ./apps/hook
 - `agentTerminalSide` (`"left"` / `"right"` / `"hidden"`, default `"left"`): which edge the **annotate-mode** Agent TUI docks against, or `"hidden"` to keep it out of the layout entirely (#1050). Type and guard live in `packages/core/agent-terminal.ts:63-83`, the config declaration in `packages/shared/config.ts:116`. Unrecognized values are silently ignored rather than warned about: `getServerConfig()` omits the key behind `isAgentTerminalSide` (`packages/shared/config.ts:374`) and `resolveAnnotateAgentTerminalSide` independently falls back to `"left"` (`packages/core/agent-terminal.ts:90-94`). `"hidden"` is a default, not a lock: the terminal can still be opened for the session from the sidebar rail, the Shift-Shift shortcut, or a message routed to the agent, none of which rewrite the preference, and an opened `"hidden"` terminal docks left (`packages/core/agent-terminal.ts:101-105`). Settings is the only way back from `"hidden"`. Two UI surfaces write the key (the terminal's own Display popover Position control and Settings → General → "Agent TUI Position"), and the Display popover's reset button restores `"left"`. The side only decides where the terminal docks when opened; it never auto-opens (`packages/editor/App.tsx:523`), it is not rendered below 1024px or in wide mode (`packages/editor/agentTerminalLayout.ts:14`, `:73`), and `"right"` visually displaces the annotations/AI right panel while preserving its state (`packages/editor/agentTerminalLayout.ts:53-57`).
 - `agentTerminalDefaultAgent` (string agent id, e.g. `"claude"` or `"codex"`, default `""` meaning no recorded choice): which agent the annotate-mode Agent TUI preselects when the panel opens (#1050). Validation is `typeof === "string"` only, with no enum and no check against installed agents, so an unknown or currently unavailable id is inert rather than an error: `resolveAnnotateAgentId` uses the saved id only when it appears among the available agents and otherwise takes the first available one (`packages/ui/utils/annotateAgentTerminal.ts:45-54`). It is written only by the "save as default" checkbox in the terminal's agent picker (`packages/editor/components/AnnotateAgentTerminalPanel.tsx:257`); there is no Settings control for it. An empty string deletes the cookie and reads as unset, though the server allowlist will still write `""` into `config.json`, where it is then ignored.
 - Precedence for both agent-terminal keys follows the settings registry (`packages/ui/config/settings.ts`) and its resolver (`packages/ui/config/configStore.ts:3-5`): **server config file > cookie > built-in default**. `config.json` is the durable, cross-browser store; the cookie (`plannotator-annotate-agent-terminal-side`, `plannotator-annotate-agent-terminal-default`) is the browser-local fallback. There is no one-time cookie-to-config migration: those two cookie names were deliberately kept unchanged so a pre-registry cookie stays readable, and its value only reaches `config.json` if the user changes the setting again. The sync runs one direction at startup, with `init()` stamping a valid config value back into the cookie (`packages/ui/config/configStore.ts:157-161`). Neither key has an env-var equivalent, and only the annotate servers allowlist them on `POST /api/config` (`packages/server/annotate.ts:726-727`, mirrored in `apps/pi-extension/server/serverAnnotate.ts:690-691`), so setting them has no effect on plan or review sessions.
-- `pfmReminder` (`true` / `false`, default `false`) — when enabled, a Plannotator Flavored Markdown reminder is injected at plan-time describing the renderer's extensions (code-file links, callouts, tables, diagrams, task lists, question blocks, hex swatches, wiki-links). The text is one static constant (`PFM_REMINDER`, `packages/shared/pfm-reminder.ts`, vendored to Pi) with no per-request part, so it never breaks a prompt-cache prefix. Lets the planning agent enrich plans with PFM features without having to discover them. Composes cleanly with the compound-skill improvement hook. Supported across all three runtimes: Claude Code (`improve-context` PreToolUse hook in `apps/hook/server/index.ts`), OpenCode (`experimental.chat.system.transform` in `apps/opencode-plugin/index.ts`), and Pi (`before_agent_start` in `apps/pi-extension/index.ts`).
+- `pfmReminder` (`true` / `false`, default `false`) — when enabled, a Plannotator Flavored Markdown reminder is injected at plan-time describing the renderer's extensions (code-file links, callouts, tables, diagrams, task lists, question blocks, hex swatches, wiki-links). The text is one static constant (`PFM_REMINDER`, `packages/shared/pfm-reminder.ts`, vendored to Pi) with no per-request part, so it never breaks a prompt-cache prefix. Lets the planning agent enrich plans with PFM features without having to discover them. Composes cleanly with the compound-skill improvement hook. Supported across the Claude Code, OpenCode, Pi and Qwen Code runtimes: Claude Code (`improve-context` PreToolUse hook in `apps/hook/server/index.ts`), OpenCode (`experimental.chat.system.transform` in `apps/opencode-plugin/index.ts`), Pi (`before_agent_start` in `apps/pi-extension/index.ts`), and Qwen Code (PreToolUse hook on `enter_plan_mode` in `apps/qwen-code/hooks/hooks.json`).
 - `inboxNotifications` (`{ enabled?, dismissed?, allowedOrigin? }`, default: on, not dismissed, no origin) — the Plannotator Inbox's browser notifications (see "Notifications" under "Plannotator Inbox"). Written by the Inbox page (its one-time ask and Settings) through `POST /api/inbox/settings` `{ notifications: { enabled?, dismissed?, allowed_origin? } }`, never localStorage, because the browser's permission is per origin and the Inbox's port can change; `allowedOrigin` is the page origin where the person last turned them on, so a page on a new port asks again. No env-var equivalent. `inboxTool` (the Inbox tool switch) is in the `PLANNOTATOR_INBOX_TOOL` row.
 
 **Legacy:** `SSH_TTY` and `SSH_CONNECTION` are still detected when `PLANNOTATOR_REMOTE` is unset. Set `PLANNOTATOR_REMOTE=1` / `true` to force remote mode or `0` / `false` to force local mode.
@@ -1172,6 +1178,78 @@ byte-identical — also accepts the last developer message in the turn as the
 boundary. Without it the guard is inert on exactly the versions the fallback
 enables, and an unrevised denied plan is re-served on every Stop of the turn.
 
+### Qwen Code: extension, plan review and the `qwen-sdk` Ask AI provider
+
+Qwen Code (QwenLM/qwen-code, npm `@qwen-code/qwen-code`) is supported as a
+full host. The integration is the native extension in `apps/qwen-code/`
+(manifest `qwen-extension.json`, name `plannotator`), which the install
+scripts fetch from the skills sparse checkout and install with
+`qwen extensions install <path> --consent` (uninstalling an earlier
+`plannotator` extension first — same name, and a user's hand-made
+experimental extension is replaced on purpose; back it up beforehand).
+
+**Plan review is the classic blocking hook.** Qwen Code has no hooks-module
+equivalent of the Claude Code mod, so `apps/qwen-code/hooks/hooks.json` wires
+`PermissionRequest` on `exit_plan_mode` to the plain `plannotator` command
+(10-day timeout), exactly like the classic Claude Code hook. Deny returns the
+feedback to the model immediately; approve is confirmed once more in the
+terminal because Qwen Code always shows its own plan confirmation for
+`exit_plan_mode` and ignores a hook allow there. A `PreToolUse` hook on
+`enter_plan_mode` runs `plannotator improve-context` (the `pfmReminder`
+setting). The three Qwen skills (`plannotator-review`, `plannotator-annotate`,
+`plannotator-last` under `apps/qwen-code/skills/`) carry
+`PLANNOTATOR_ORIGIN=qwen-code` baked in, like the Vibe ones.
+
+**Origin detection** is `process.env.QWEN_CODE` at the top of the chain in
+`apps/hook/server/index.ts` (Qwen Code sets it in its session environment,
+alongside `QWEN_CODE_PROJECT_DIR` and `QWEN_CODE_SESSION_ID`);
+`PLANNOTATOR_ORIGIN=qwen-code` is the manual override. The plan tool name for
+the `qwen-code` prompt runtime is `exit_plan_mode`
+(`PLAN_TOOL_NAMES`, `packages/shared/prompts.ts`).
+
+**`annotate-last`** reads the session log (`apps/hook/server/qwen-session.ts`,
+mirrored by `qwen-session.test.ts`): Qwen records each session at
+`<runtime base>/projects/<sanitized-cwd>/chats/<session-id>.jsonl` (runtime
+base `$QWEN_RUNTIME_DIR` > `$QWEN_HOME` > `~/.qwen`); the cwd is sanitized
+lowercased-on-Windows with every non-alphanumeric replaced by `-`, and the
+session id comes from `QWEN_CODE_SESSION_ID`. Assistant lines are
+`type: "assistant"` with `message.parts` of `{ text, thought? }` /
+`{ functionCall }`; `thought` parts are reasoning and never rendered;
+subagent runs live in `agent-<id>.jsonl` sidecars, so the main log carries
+only the main conversation.
+
+**Ask AI: the `qwen-sdk` provider** (`packages/ai/providers/qwen-sdk.ts`,
+Bun, plus the `qwen-sdk-node.ts` mirror vendored to Pi; event mapper
+`qwen-events.ts`, tests `qwen-events.test.ts` over REAL captured stream lines
+and `model-catalog.test.ts` for `qwenCatalogFromSettings`). One short-lived
+`qwen -o stream-json --include-partial-messages --approval-mode plan` process
+per query (headless one-shot), not a long-lived RPC channel: `--approval-mode
+plan` makes the run read-only (analyze, never modify), `--max-session-turns`
+bounds it, and the CLI's wall-time budget aborts a runaway with exit 55.
+Conversation continuity is Qwen's own: the session id (a UUIDv4 we chose;
+`--session-id` requires one) is `--session-id` on the first query and
+`--resume <id>` on later ones. **The prompt goes on STDIN, not argv** —
+cmd.exe caps an argument list at ~8 KB while the first query carries the
+whole review preamble (up to 60 KB), so `--append-system-prompt` is not an
+option; the preamble is inlined into the first query via
+`buildEffectivePrompt` (the Codex/Pi house pattern). Bun spawns with
+`stdin: new TextEncoder().encode(prompt)` (an ArrayBufferView: the child
+reads the buffer, then hits EOF — `SpawnOptions.Writable` takes no string)
+and Node writes the line then closes stdin; both are probe-verified. Stream
+lines are one JSON object per stdout line, each carrying
+`parent_tool_use_id` (subagent lines are dropped); only
+`content_block_delta`/`text_delta` streams text, `assistant` yields one text
+message plus per-block `tool_use`, `user` yields `tool_result` (an
+`is_error` result is prefixed `[Error] `), and `result` ends the query. The
+init line reports the model and `qwen_code_version` (the provider's
+`toolVersion`). Models are discovered by reading
+`<base dir>/settings.json` (`model.name` + `modelProviders.openai[]`, base
+dir `$QWEN_HOME` else `~/.qwen`) — no probe process. The provider registers
+under `qwen-sdk` in both runtimes' `ai-runtime.ts` (detected via
+`Bun.which("qwen")` / `where qwen`, with the Windows `.cmd` shim resolution)
+and is the preferred Ask AI provider for the `qwen-code` origin
+(`AGENT_CONFIG`, `packages/core/agents.ts`).
+
 ## Code Review Flow
 
 ```
@@ -1594,6 +1672,7 @@ Ask AI providers are detected independently from installed/authenticated local C
 | `codex` | `codex-sdk` |
 | `opencode` | `opencode-sdk` |
 | `pi` | `pi-sdk` |
+| `qwen-code` | `qwen-sdk` |
 | `copilot-cli` | no dedicated provider; fallback to saved/server default |
 | `gemini-cli` | no dedicated provider; fallback to saved/server default |
 | `mistral-vibe` | no dedicated provider; fallback to saved/server default |

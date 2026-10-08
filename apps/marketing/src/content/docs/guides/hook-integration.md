@@ -120,13 +120,15 @@ See [Annotate Flags](/docs/commands/annotate/#flags) for the full stdout matrix.
 
 ## Agents with built-in plugins
 
-OpenCode and Pi have native Plannotator plugins with slash commands:
+OpenCode, Pi, and Qwen Code have native Plannotator plugins or extensions with slash commands:
 
 ```
 /plannotator-annotate spec.md --gate
 ```
 
 These harnesses don't use stdout for signaling -- the plugin writes directly to the session. Approve and Close skip injection; Send Annotations injects the feedback. `--hook` and `--json` are accepted silently so recipes stay portable across all harnesses.
+
+Qwen Code also gets plan review for free: its extension wires a `PermissionRequest` hook on `exit_plan_mode`, so every plan opens in the browser before the agent starts executing (see the [Qwen Code guide](/docs/guides/qwen-code/)).
 
 ## Notes
 

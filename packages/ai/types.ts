@@ -369,3 +369,13 @@ export interface OpenCodeConfig extends AIProviderConfig {
   /** Port for the spawned OpenCode server. Default: 0 (OS-assigned free port). */
   port?: number;
 }
+
+export interface QwenSDKConfig extends AIProviderConfig {
+  type: "qwen-sdk";
+  /**
+   * Explicit path to the qwen CLI binary.
+   * Required when running inside a compiled binary where PATH resolution
+   * doesn't work the same way (e.g., bun build --compile).
+   */
+  qwenExecutablePath?: string;
+}

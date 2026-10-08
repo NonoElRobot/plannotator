@@ -20,6 +20,7 @@ export type HarnessId =
   | 'cline'
   | 'pi'
   | 'opencode'
+  | 'qwen'
   | 'zed'
   | 'kiro'
   | 'jetbrains'
@@ -44,6 +45,7 @@ export const HARNESSES: readonly Harness[] = [
   { id: 'cline', label: 'Cline' },
   { id: 'pi', label: 'Pi' },
   { id: 'opencode', label: 'OpenCode' },
+  { id: 'qwen', label: 'Qwen Code' },
   { id: 'zed', label: 'Zed' },
   { id: 'kiro', label: 'Kiro' },
   { id: 'jetbrains', label: 'JetBrains' },
@@ -232,6 +234,15 @@ export function harnessPanel(id: HarnessId, ctx: ConnectContext): HarnessPanel {
           },
         ],
         note: "Use the project's opencode.json or ~/.config/opencode/opencode.json.",
+      };
+    case 'qwen':
+      return {
+        lead: 'Run this in a terminal. It adds the Inbox to Qwen Code in every project.',
+        artefacts: [{ kind: 'code', text: `qwen mcp add -s user ${SERVER} ${cmd}` }],
+        another: {
+          summary: 'add it to ~/.qwen/settings.json by hand',
+          body: { kind: 'code', label: '~/.qwen/settings.json', text: mcpServersSnippet(ctx) },
+        },
       };
     case 'zed':
       return {

@@ -63,11 +63,17 @@ Requires the `opencode` CLI installed and authenticated. Plannotator spawns `ope
 
 OpenCode supports session forking, resuming, and runtime permission approvals — the richest capability set of all four providers.
 
+### Qwen Code (via qwen-sdk)
+
+Requires the `qwen` CLI installed (`npm install -g @qwen-code/qwen-code`). Plannotator runs one short-lived `qwen -o stream-json` process per question, in read-only plan mode, and resumes the same Qwen conversation between questions so follow-ups keep context.
+
+**Models:** whatever your Qwen `settings.json` configures (`modelProviders.openai` plus the active `model.name`). No API keys are managed by Plannotator — Qwen Code uses its own local configuration.
+
 ## Configuration
 
 Provider and model selection is available in **Settings > AI**. In a session where Ask AI is answered by the session itself, Settings > AI shows only that session. These persist via cookies across sessions.
 
-By default, Plannotator prefers the provider that matches the detected agent origin: Claude Code uses Claude, Codex uses Codex, OpenCode uses OpenCode, and Pi uses Pi when those providers are available. GitHub Copilot CLI and Gemini CLI do not have dedicated Ask AI providers yet, so they fall back to your saved provider or the server default.
+By default, Plannotator prefers the provider that matches the detected agent origin: Claude Code uses Claude, Codex uses Codex, OpenCode uses OpenCode, Pi uses Pi, and Qwen Code uses Qwen Code when those providers are available. GitHub Copilot CLI and Gemini CLI do not have dedicated Ask AI providers yet, so they fall back to your saved provider or the server default.
 
 You can also override the provider and model per-session using the config bar at the bottom of the AI sidebar. Changing the provider or model starts a new session — old messages stay visible but the conversation resets.
 
@@ -83,6 +89,8 @@ A session is created lazily on your first question. Until then, no resources are
 
 **OpenCode sessions** pass the review context via the `system` field on the prompt API. OpenCode supports forking from a parent session and resuming previous sessions. Permission requests work the same as Claude — approval cards appear inline.
 
+**Qwen Code sessions** inject the review context into the first question and resume the same Qwen session for follow-ups. Each question runs read-only (`--approval-mode plan`), so the AI can analyze but never modify your files.
+
 **Context handling:** Large plans, documents, and diffs are truncated to stay within context limits. When you ask from a selection, the selected text or selected code is always sent alongside the question regardless of truncation. In folder annotation mode, Ask AI is scoped to the currently opened document only.
 
 ## Permission requests
@@ -95,20 +103,22 @@ OpenCode supports the same permission approval flow as Claude — tool calls tha
 
 Pi does not expose a permission approval gate over RPC, so tool execution is handled entirely by Pi's own runtime.
 
+Qwen Code runs each question in read-only plan mode, so no permission requests appear.
+
 ## Reasoning effort
 
 Codex supports a reasoning effort setting with four levels: **Low**, **Medium**, **High**, and **Max**. This is available in the config bar at the bottom of the AI sidebar. Higher effort means slower but more thorough responses.
 
-This setting only applies to Codex — Claude, Pi, and OpenCode do not expose a reasoning effort control.
+This setting only applies to Codex — Claude, Pi, OpenCode, and Qwen Code do not expose a reasoning effort control.
 
 ## Available settings
 
 | Setting | Description | Provider |
 |---------|-------------|----------|
-| Provider | Claude, Codex, Pi, or OpenCode | All |
+| Provider | Claude, Codex, Pi, OpenCode, or Qwen Code | All |
 | Model | Model selection per provider | All |
 | Reasoning effort | Low / Medium / High / Max | Codex only |
 | Default tools | Read, Glob, Grep, WebSearch | Claude only |
 | Sandbox mode | Read-only | Codex only |
 | Permission mode | Default | Claude only |
-| Max turns | 99 | Claude, Codex |
+| Max turns | 99 | Claude, Codex, Qwen Code |

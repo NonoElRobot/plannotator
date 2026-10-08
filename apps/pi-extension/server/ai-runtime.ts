@@ -137,6 +137,26 @@ export async function createPiAIRuntime(options: CreatePiAIRuntimeOptions = {}):
 			} catch {
 				// OpenCode not available.
 			}
+
+			try {
+				await import("../generated/ai/providers/qwen-sdk-node.ts");
+				const qwenPath = whichCmd("qwen");
+				if (qwenPath) {
+					const provider = await ai.createProvider({
+						type: "qwen-sdk",
+						cwd,
+						qwenExecutablePath: qwenPath,
+					} as any);
+					const providerId = registry.register(provider);
+					// Deferred like Pi: fetchModels only reads ~/.qwen/settings.json
+					// (no spawn), and a Qwen session spawns its own `qwen` and runs
+					// on the CLI's default model when none is picked, so it never
+					// waits on discovery either.
+					deferModelDiscovery(providerId, provider, { blockSession: false });
+				}
+			} catch {
+				// Qwen Code not available.
+			}
 		};
 
 		const pullBridge = !options.sessionBridge && options.pullSessionBridge

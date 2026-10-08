@@ -118,6 +118,15 @@ import AnnoReplace from './AnnoReplace.astro';
         </button>
         <button
           class="agent-btn"
+          data-agent="qwen"
+          data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
+          data-video=""
+        >
+          <img src="/assets/icon-qwen.svg" alt="" class="w-4 h-4" />
+          <span>Qwen Code</span>
+        </button>
+        <button
+          class="agent-btn"
           data-agent="vscode"
           data-command="curl -fsSL https://plannotator.ai/install.sh | bash"
           data-video=""
@@ -313,6 +322,18 @@ import AnnoReplace from './AnnoReplace.astro';
       },
       pi: {
         detail: 'Or try without installing: pi -e npm:@plannotator/pi-extension'
+      },
+      qwen: {
+        steps: [
+          '/plannotator-review',
+          '/plannotator-annotate <file|folder|url>',
+          '/plannotator-last'
+        ],
+        detail: 'Native extension. Every plan opens in the browser for review, and these commands run in Qwen Code:',
+        link: {
+          text: 'Read the Qwen Code guide',
+          url: '/docs/guides/qwen-code/'
+        }
       },
       vscode: {
         detail: 'Then install the VS Code extension for an integrated experience:',

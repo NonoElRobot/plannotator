@@ -49,9 +49,9 @@ RECONFIGURE=0
 # Binary-only mode. Installs just the plannotator binary (to $INSTALL_DIR) and
 # no persistent state elsewhere — no sem sidecar, no CallDiff or agent-terminal runtime, no
 # skills, hooks, slash commands, or per-agent config (Claude, Codex, OpenCode,
-# Gemini, Kiro, Vibe). Set by --minimal (1) / --no-minimal (0); -1 = neither flag
-# given (fall through to the PLANNOTATOR_MINIMAL env var). Resolved after arg
-# parsing so a flag overrides the env var in either direction.
+# Gemini, Kiro, Vibe, Qwen Code). Set by --minimal (1) / --no-minimal (0); -1 =
+# neither flag given (fall through to the PLANNOTATOR_MINIMAL env var). Resolved
+# after arg parsing so a flag overrides the env var in either direction.
 MINIMAL_FLAG=-1
 # Per-agent integration opt-outs (#1178). Skip means do-not-write: when a
 # skipped agent is detected, the installer reports "detected, skipped" and
@@ -63,6 +63,7 @@ SKIP_GEMINI_FLAG=0
 SKIP_KIRO_FLAG=0
 SKIP_VIBE_FLAG=0
 SKIP_OPENCODE_FLAG=0
+SKIP_QWEN_FLAG=0
 # Same shape, but scoped to the skills/slash-command sparse checkout rather
 # than one agent's home: --skip-skills turns the whole fetch into a no-op for
 # every scope it writes (Claude, ~/.agents, OpenCode, Gemini, Kiro), including
@@ -76,8 +77,8 @@ usage() {
 Usage: install.sh [--version <tag>] [--verify-attestation | --skip-attestation]
                   [--extras | --no-extras] [--model-invocable <list>|none]
                   [--minimal | --no-minimal] [--skip-codex] [--skip-gemini]
-                  [--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-skills]
-                  [--non-interactive] [--reconfigure] [--help]
+                  [--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-qwen]
+                  [--skip-skills] [--non-interactive] [--reconfigure] [--help]
        install.sh <tag>
 
 Options:
@@ -105,10 +106,11 @@ Options:
                          --binary-only). Skips the sem semantic-diff sidecar,
                          the CallDiff runtime, the agent-terminal runtime, and every per-agent
                          integration (skills, hooks, slash commands, and config
-                         for Claude, Codex, OpenCode, Gemini, Kiro, and Vibe). No
-                         persistent state is written outside $HOME/.local/bin
-                         (a temp download file is still used and removed). Also
-                         enabled by exporting PLANNOTATOR_MINIMAL=1.
+                         for Claude, Codex, OpenCode, Gemini, Kiro, Vibe, and
+                         Qwen Code). No persistent state is written outside
+                         $HOME/.local/bin (a temp download file is still used
+                         and removed). Also enabled by exporting
+                         PLANNOTATOR_MINIMAL=1.
   --no-minimal           Force a full install even when PLANNOTATOR_MINIMAL is
                          set in the environment.
   --skip-codex           Do not write the Codex integration (hooks.json /
@@ -136,10 +138,16 @@ Options:
                          so this is a plain do-not-write switch. Env var:
                          PLANNOTATOR_SKIP_OPENCODE_INSTALL; config key:
                          skipInstall.opencode.
+  --skip-qwen            Same opt-out for the Qwen Code integration (the
+                         native extension installed with `qwen extensions
+                         install`: plan-review hook and /plannotator-* skills).
+                         Env var: PLANNOTATOR_SKIP_QWEN_INSTALL; config key:
+                         skipInstall.qwen.
   --skip-skills          Do not fetch or write the /plannotator-* skills and
                          slash commands (the sparse checkout that feeds Claude
-                         Code, ~/.agents, OpenCode, Gemini, Kiro, and Vibe), the
-                         extras, or the skill-scope cleanup sweeps. Nothing
+                         Code, ~/.agents, OpenCode, Gemini, Kiro, Vibe, and the
+                         Qwen Code extension), the extras, or the skill-scope
+                         cleanup sweeps. Nothing
                          already installed is removed. The binary, hooks, and
                          per-agent config still install. Use it where
                          github.com cannot serve the tag being installed. Env
@@ -317,6 +325,10 @@ while [ $# -gt 0 ]; do
             ;;
         --skip-opencode)
             SKIP_OPENCODE_FLAG=1
+            shift
+            ;;
+        --skip-qwen)
+            SKIP_QWEN_FLAG=1
             shift
             ;;
         --skip-skills)
@@ -534,6 +546,8 @@ skip_vibe=0
 skip_vibe_source=""
 skip_opencode=0
 skip_opencode_source=""
+skip_qwen=0
+skip_qwen_source=""
 # skipInstall.skills is not an agent — it opts out of the skills/slash-command
 # checkout for every scope at once — but it shares the same three layers and
 # the same key region, so it rides along in the loop below.
@@ -566,7 +580,7 @@ if [ -f "$_config_dir/config.json" ]; then
         }' "$_config_dir/config.json" 2>/dev/null) || _skip_install_block=""
 fi
 if [ -n "$_skip_install_block" ]; then
-    for _agent in codex gemini kiro vibe opencode skills; do
+    for _agent in codex gemini kiro vibe opencode qwen skills; do
         if printf '%s' "$_skip_install_block" | grep -q "\"$_agent\"[[:space:]]*:[[:space:]]*false"; then
             continue # explicit false is a veto, never a skip
         fi
@@ -591,6 +605,10 @@ if [ -n "$_skip_install_block" ]; then
                 opencode)
                     skip_opencode=1
                     skip_opencode_source="config skipInstall.opencode"
+                    ;;
+                qwen)
+                    skip_qwen=1
+                    skip_qwen_source="config skipInstall.qwen"
                     ;;
                 skills)
                     skip_skills=1
@@ -652,6 +670,16 @@ case "${PLANNOTATOR_SKIP_OPENCODE_INSTALL:-}" in
         skip_opencode_source=""
         ;;
 esac
+case "${PLANNOTATOR_SKIP_QWEN_INSTALL:-}" in
+    1|true|yes|TRUE|YES|True|Yes)
+        skip_qwen=1
+        skip_qwen_source="PLANNOTATOR_SKIP_QWEN_INSTALL"
+        ;;
+    0|false|no|FALSE|NO|False|No)
+        skip_qwen=0
+        skip_qwen_source=""
+        ;;
+esac
 case "${PLANNOTATOR_SKIP_SKILLS_INSTALL:-}" in
     1|true|yes|TRUE|YES|True|Yes)
         skip_skills=1
@@ -681,6 +709,10 @@ fi
 if [ "$SKIP_OPENCODE_FLAG" -eq 1 ]; then
     skip_opencode=1
     skip_opencode_source="--skip-opencode"
+fi
+if [ "$SKIP_QWEN_FLAG" -eq 1 ]; then
+    skip_qwen=1
+    skip_qwen_source="--skip-qwen"
 fi
 if [ "$SKIP_SKILLS_FLAG" -eq 1 ]; then
     skip_skills=1
@@ -981,6 +1013,7 @@ write_install_flags() {
     [ "$SKIP_KIRO_FLAG" = "1" ] && _if_add skip-kiro
     [ "$SKIP_VIBE_FLAG" = "1" ] && _if_add skip-vibe
     [ "$SKIP_OPENCODE_FLAG" = "1" ] && _if_add skip-opencode
+    [ "$SKIP_QWEN_FLAG" = "1" ] && _if_add skip-qwen
     [ "$SKIP_SKILLS_FLAG" = "1" ] && _if_add skip-skills
     _if_path="$_config_dir/install-flags.json"
     {
@@ -1156,6 +1189,14 @@ fi
 kiro_available=0
 if command -v kiro-cli >/dev/null 2>&1 || [ -d "$HOME/.kiro" ]; then
     kiro_available=1
+fi
+
+# Qwen Code (QwenLM/qwen-code) stores config and state under $QWEN_HOME when
+# set, falling back to ~/.qwen. The integration is the native extension
+# installed with `qwen extensions install` from apps/qwen-code.
+qwen_available=0
+if command -v qwen >/dev/null 2>&1 || [ -d "${QWEN_HOME:-$HOME/.qwen}" ]; then
+    qwen_available=1
 fi
 
 # Vibe (Mistral's TUI coding agent) stores everything under $VIBE_HOME when
@@ -1713,6 +1754,15 @@ if [ "$skip_skills" -eq 1 ]; then
     echo "by this run — re-run without the opt-out to install them."
 fi
 
+# Qwen Code opt-out: the extension is fetched from the same checkout as the
+# skills, so a skills opt-out also leaves it uninstalled — announced here, the
+# QWEN CODE USERS section below covers both cases in the closing banner.
+if [ "$qwen_available" -eq 1 ] && [ "$skip_qwen" -eq 1 ]; then
+    echo ""
+    echo "Qwen Code: detected, skipped (${skip_qwen_source})."
+    echo "No extension was installed or removed."
+fi
+
 # Install skills and slash commands from a sparse checkout (requires git).
 # Hard requirement: without git we cannot install the /plannotator-* skills,
 # so fail loudly instead of leaving a partial install. Hook/config writing
@@ -1834,7 +1884,7 @@ checkout_failed=0
     fi
     cd repo || exit 1
     if [ "$sparse_clone" -eq 1 ]; then
-        if ! git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands 2>"$git_err"; then
+        if ! git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code 2>"$git_err"; then
             surface_git_error
             exit 1
         fi
@@ -1928,6 +1978,22 @@ checkout_failed=0
         # reference.
         copy_skill_if_present apps/skills/core/plannotator "$VIBE_SKILLS_DIR"
         echo "Installed Vibe skills to ${VIBE_SKILLS_DIR}/"
+    fi
+
+    # Qwen Code extension — native integration for Qwen Code (QwenLM/qwen-code):
+    # plan-review hook on exit_plan_mode plus the /plannotator-* skills, wired
+    # through `qwen extensions install` from the checkout. It replaces any
+    # earlier (possibly hand-made) plannotator extension, so uninstall first:
+    # a missing extension exits non-zero and is harmless. Best effort, like the
+    # skill copies above: a failed install must not surface as a git error.
+    if command -v qwen >/dev/null 2>&1 && [ "$skip_qwen" -eq 0 ] && [ -f "apps/qwen-code/qwen-extension.json" ]; then
+        qwen extensions uninstall plannotator >/dev/null 2>&1 || true
+        if qwen extensions install "$(pwd)/apps/qwen-code" --consent; then
+            echo "Installed the Qwen Code extension (plan review + /plannotator-* commands)"
+        else
+            echo "Warning: the Qwen Code extension could not be installed. Re-run manually:" >&2
+            echo "  qwen extensions install $(pwd)/apps/qwen-code --consent" >&2
+        fi
     fi
 ) || checkout_failed=1
 
@@ -2324,6 +2390,29 @@ if [ "$vibe_available" -eq 1 ]; then
         echo "Vibe skills are installed to ${VIBE_SKILLS_DIR}/"
         echo "Note: improve-context (plan-mode enrichment) is not wired for Vibe —"
         echo "only the plan-review gate runs."
+    fi
+fi
+if [ "$qwen_available" -eq 1 ]; then
+    echo ""
+    echo "=========================================="
+    echo "  QWEN CODE USERS"
+    echo "=========================================="
+    echo ""
+    if [ "$skip_qwen" -eq 1 ]; then
+        echo "Qwen Code was detected, but the extension was skipped (${skip_qwen_source})."
+        echo "Re-run without the opt-out to install it."
+    elif [ "$skip_skills" -eq 1 ]; then
+        echo "Qwen Code was detected, but skills were skipped (${skip_skills_source}),"
+        echo "so the extension source was not fetched and no extension was installed."
+        echo "Re-run without the opt-out to install it."
+    elif ! command -v qwen >/dev/null 2>&1; then
+        echo "Qwen Code was detected (a ~/.qwen or \$QWEN_HOME directory exists), but the"
+        echo "\`qwen\` binary was not found on PATH, so no extension was installed."
+        echo "Install Qwen Code (npm install -g @qwen-code/qwen-code) and re-run the installer."
+    else
+        echo "Restart Qwen Code. Plans open in your browser for review on"
+        echo "exit_plan_mode, and the /plannotator-review, /plannotator-annotate,"
+        echo "and /plannotator-last commands are ready."
     fi
 fi
 echo ""

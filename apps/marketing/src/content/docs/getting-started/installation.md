@@ -484,3 +484,31 @@ This adds the following slash commands:
 ```
 
 Those commands open the browser-based Plannotator review UI and send the result back into the Droid session.
+
+## Qwen Code
+
+Qwen Code is auto-detected — no extra flag or step. If the `qwen` binary is on your PATH (or
+`~/.qwen` / `$QWEN_HOME` exists) when you run the installer, the native Plannotator extension
+installs automatically:
+
+```bash
+npm install -g @qwen-code/qwen-code   # Qwen Code itself, if you don't have it
+
+curl -fsSL https://plannotator.ai/install.sh | bash   # or install.ps1 / install.cmd
+```
+
+The installer runs `qwen extensions install` on the extension source, replacing any earlier
+`plannotator` extension. Restart Qwen Code when it finishes. If you install Qwen Code *after*
+Plannotator, just re-run the installer.
+
+The extension gives you:
+
+- Plan review on `exit_plan_mode` — the plan opens in your browser. A deny returns the feedback to the model immediately; an approve is confirmed once more in the terminal, because Qwen Code always shows its own plan confirmation.
+- `/plannotator-review`, `/plannotator-annotate`, and `/plannotator-last` skills.
+- Ask AI answered by your own Qwen Code CLI (`qwen-sdk` provider), preferred automatically for Qwen Code sessions.
+
+Skip the Qwen Code integration with `--skip-qwen` (PowerShell: `-SkipQwen`),
+`PLANNOTATOR_SKIP_QWEN_INSTALL=1`, or `{ "skipInstall": { "qwen": true } }` in
+`~/.plannotator/config.json`.
+
+See the [Qwen Code guide](/docs/guides/qwen-code/) for details.

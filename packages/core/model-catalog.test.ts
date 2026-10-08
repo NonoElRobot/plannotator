@@ -8,6 +8,7 @@ import {
   modelSelectOptions,
   piCatalogFromRpc,
   piThinkingLevelsSupported,
+  qwenCatalogFromSettings,
   resolveEffortChoice,
   resolveModelChoice,
   type CatalogModel,
@@ -291,5 +292,66 @@ describe("piCatalogFromRpc", () => {
     expect(piThinkingLevelsSupported("1.0.0")).toBe(true);
     expect(piThinkingLevelsSupported("0.84.2")).toBe(false);
     expect(piThinkingLevelsSupported("garbage")).toBe(false);
+  });
+});
+
+describe("qwenCatalogFromSettings", () => {
+  // The shape of a real ~/.qwen/settings.json (Qwen Code 0.25.0): model.name
+  // is what the CLI runs, modelProviders.openai[] are the OpenAI-compatible
+  // endpoints the user configured.
+  const SETTINGS = {
+    model: { name: "qwen3-coder-480b" },
+    modelProviders: {
+      openai: [
+        { id: "qwen3-coder-480b", name: "Qwen3 Coder 480B (local)" },
+        { id: "gpt-5.2", name: "GPT-5.2" },
+        { id: "local-llama", name: "  " },
+        null,
+        "garbage",
+      ],
+    },
+  };
+
+  test("lists the openai provider rows and marks model.name as default", () => {
+    const models = qwenCatalogFromSettings(SETTINGS);
+    expect(models.map((m) => m.id)).toEqual(["qwen3-coder-480b", "gpt-5.2", "local-llama"]);
+    expect(models.find((m) => m.id === "qwen3-coder-480b")?.label).toBe("Qwen3 Coder 480B (local)");
+    expect(models.find((m) => m.id === "qwen3-coder-480b")?.default).toBe(true);
+    expect(models.find((m) => m.id === "gpt-5.2")?.default).toBeUndefined();
+    // A blank display name falls back to the id.
+    expect(models.find((m) => m.id === "local-llama")?.label).toBe("local-llama");
+    // Invalid entries (null, non-object) are skipped, not fatal.
+    expect(models.length).toBe(3);
+  });
+
+  test("an active model absent from the provider list is offered anyway, first and default", () => {
+    const models = qwenCatalogFromSettings({
+      model: { name: "built-in-model" },
+      modelProviders: { openai: [{ id: "gpt-5.2", name: "GPT-5.2" }] },
+    });
+    expect(models).toEqual([
+      { id: "built-in-model", label: "built-in-model", default: true },
+      { id: "gpt-5.2", label: "GPT-5.2" },
+    ]);
+  });
+
+  test("no active model: the first provider row is the default", () => {
+    const models = qwenCatalogFromSettings({
+      modelProviders: { openai: [{ id: "a" }, { id: "b", name: "B" }] },
+    });
+    expect(models[0]).toEqual({ id: "a", label: "a", default: true });
+    expect(models[1]).toEqual({ id: "b", label: "B" });
+  });
+
+  test("no providers and no active model: empty", () => {
+    expect(qwenCatalogFromSettings({})).toEqual([]);
+    expect(qwenCatalogFromSettings(null)).toEqual([]);
+    expect(qwenCatalogFromSettings("not an object")).toEqual([]);
+  });
+
+  test("an active model with no providers is the single default row", () => {
+    expect(qwenCatalogFromSettings({ model: { name: "solo" } })).toEqual([
+      { id: "solo", label: "solo", default: true },
+    ]);
   });
 });

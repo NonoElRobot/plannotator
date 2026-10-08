@@ -36,6 +36,7 @@ set "SKIP_GEMINI_FLAG=0"
 set "SKIP_KIRO_FLAG=0"
 set "SKIP_VIBE_FLAG=0"
 set "SKIP_OPENCODE_FLAG=0"
+set "SKIP_QWEN_FLAG=0"
 REM Same shape, but scoped to the skills/slash-command sparse checkout rather
 REM than one agent's home: --skip-skills turns the whole fetch into a no-op for
 REM every scope it writes (Claude, .agents, OpenCode, Gemini, Kiro), including
@@ -172,6 +173,11 @@ if /i "%~1"=="--skip-opencode" (
     shift
     goto parse_args
 )
+if /i "%~1"=="--skip-qwen" (
+    set "SKIP_QWEN_FLAG=1"
+    shift
+    goto parse_args
+)
 if /i "%~1"=="--skip-skills" (
     set "SKIP_SKILLS_FLAG=1"
     shift
@@ -191,7 +197,7 @@ REM unquoted arg containing `&` would re-trigger metacharacter interpretation.
 set "CURRENT_ARG=%~1"
 if "!CURRENT_ARG:~0,1!"=="-" (
     echo Unknown option: "%~1" >&2
-    echo Usage: install.cmd [--version ^<tag^>] [--verify-attestation ^| --skip-attestation] [--with-call-flow] [--extras ^| --no-extras] [--model-invocable ^<list^>] [--minimal ^| --no-minimal] [--skip-codex] [--skip-gemini] [--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-skills] [--non-interactive] [--reconfigure] >&2
+    echo Usage: install.cmd [--version ^<tag^>] [--verify-attestation ^| --skip-attestation] [--with-call-flow] [--extras ^| --no-extras] [--model-invocable ^<list^>] [--minimal ^| --no-minimal] [--skip-codex] [--skip-gemini] [--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-qwen] [--skip-skills] [--non-interactive] [--reconfigure] >&2
     exit /b 1
 )
 REM Positional form: install.cmd vX.Y.Z (legacy interface).
@@ -502,13 +508,15 @@ set "SKIP_VIBE=0"
 set "SKIP_VIBE_SOURCE="
 set "SKIP_OPENCODE=0"
 set "SKIP_OPENCODE_SOURCE="
+set "SKIP_QWEN=0"
+set "SKIP_QWEN_SOURCE="
 REM skipInstall.skills is not an agent - it opts out of the skills/slash-command
 REM checkout for every scope at once - but it shares the same three layers.
 set "SKIP_SKILLS=0"
 set "SKIP_SKILLS_SOURCE="
 if exist "!_CONFIG_DIR!\config.json" (
     set "PLN_CONFIG_JSON=!_CONFIG_DIR!\config.json"
-    for /f "usebackq delims=" %%K in (`powershell -NoProfile -Command "try { $c = Get-Content $env:PLN_CONFIG_JSON -Raw | ConvertFrom-Json } catch { exit 0 }; if (-not $c.skipInstall) { exit 0 }; foreach ($k in @('codex','gemini','kiro','vibe','opencode','skills')) { $v = $c.skipInstall.$k; if ($v -is [bool] -and $v) { $k } }"`) do (
+    for /f "usebackq delims=" %%K in (`powershell -NoProfile -Command "try { $c = Get-Content $env:PLN_CONFIG_JSON -Raw | ConvertFrom-Json } catch { exit 0 }; if (-not $c.skipInstall) { exit 0 }; foreach ($k in @('codex','gemini','kiro','vibe','opencode','qwen','skills')) { $v = $c.skipInstall.$k; if ($v -is [bool] -and $v) { $k } }"`) do (
         if /i "%%K"=="codex" (
             set "SKIP_CODEX=1"
             set "SKIP_CODEX_SOURCE=config skipInstall.codex"
@@ -528,6 +536,10 @@ if exist "!_CONFIG_DIR!\config.json" (
         if /i "%%K"=="opencode" (
             set "SKIP_OPENCODE=1"
             set "SKIP_OPENCODE_SOURCE=config skipInstall.opencode"
+        )
+        if /i "%%K"=="qwen" (
+            set "SKIP_QWEN=1"
+            set "SKIP_QWEN_SOURCE=config skipInstall.qwen"
         )
         if /i "%%K"=="skills" (
             set "SKIP_SKILLS=1"
@@ -576,6 +588,14 @@ for %%V in (0 false no) do if /i "!PLANNOTATOR_SKIP_OPENCODE_INSTALL!"=="%%V" (
     set "SKIP_OPENCODE=0"
     set "SKIP_OPENCODE_SOURCE="
 )
+for %%V in (1 true yes) do if /i "!PLANNOTATOR_SKIP_QWEN_INSTALL!"=="%%V" (
+    set "SKIP_QWEN=1"
+    set "SKIP_QWEN_SOURCE=PLANNOTATOR_SKIP_QWEN_INSTALL"
+)
+for %%V in (0 false no) do if /i "!PLANNOTATOR_SKIP_QWEN_INSTALL!"=="%%V" (
+    set "SKIP_QWEN=0"
+    set "SKIP_QWEN_SOURCE="
+)
 for %%V in (1 true yes) do if /i "!PLANNOTATOR_SKIP_SKILLS_INSTALL!"=="%%V" (
     set "SKIP_SKILLS=1"
     set "SKIP_SKILLS_SOURCE=PLANNOTATOR_SKIP_SKILLS_INSTALL"
@@ -603,6 +623,10 @@ if "!SKIP_VIBE_FLAG!"=="1" (
 if "!SKIP_OPENCODE_FLAG!"=="1" (
     set "SKIP_OPENCODE=1"
     set "SKIP_OPENCODE_SOURCE=--skip-opencode"
+)
+if "!SKIP_QWEN_FLAG!"=="1" (
+    set "SKIP_QWEN=1"
+    set "SKIP_QWEN_SOURCE=--skip-qwen"
 )
 if "!SKIP_SKILLS_FLAG!"=="1" (
     set "SKIP_SKILLS=1"
@@ -957,6 +981,13 @@ REM reads the wrong session.
 if not defined VIBE_HOME set "VIBE_HOME=%USERPROFILE%\.vibe"
 set "VIBE_AVAILABLE=0"
 if exist "!VIBE_HOME!" set "VIBE_AVAILABLE=1"
+REM Qwen Code is auto-detected like Codex/Kiro: qwen on PATH or an existing
+REM %USERPROFILE%\.qwen home (QWEN_HOME wins when set), matching install.sh.
+if not defined QWEN_HOME set "QWEN_HOME=%USERPROFILE%\.qwen"
+set "QWEN_AVAILABLE=0"
+where qwen >nul 2>&1
+if !ERRORLEVEL! equ 0 set "QWEN_AVAILABLE=1"
+if exist "!QWEN_HOME!" set "QWEN_AVAILABLE=1"
 REM HONEST three-state reporting (#1178): detected-but-skipped is its own
 REM state, never conflated with "not detected". A Codex opt-out leaves the
 REM Codex home entirely untouched (no writes, no cleanup, no removal).
@@ -1028,6 +1059,14 @@ if "!VIBE_AVAILABLE!"=="1" if "!SKIP_VIBE!"=="0" (
     echo The Vibe-specific skills are not installed on Windows. Vibe picks up the
     echo shared review and annotate skills from %USERPROFILE%\.agents\skills instead;
     echo /plannotator-last is not supported for Vibe on Windows yet.
+)
+
+REM HONEST three-state reporting (#1178): a detected-but-skipped Qwen Code is
+REM its own state. A Qwen opt-out never installs or removes the extension.
+if "!QWEN_AVAILABLE!"=="1" if "!SKIP_QWEN!"=="1" (
+    echo.
+    echo Qwen Code: detected, skipped ^(!SKIP_QWEN_SOURCE!^).
+    echo No extension was installed or removed.
 )
 
 REM Clear any cached OpenCode plugin to force fresh download on next run.
@@ -1295,7 +1334,7 @@ if "!SPARSE_UNSUPPORTED!"=="1" (
 
 if "!CLONE_OK!"=="1" (
     pushd "!SKILLS_TMP!\repo"
-    if "!SPARSE_CLONE!"=="1" git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands >nul 2>&1
+    if "!SPARSE_CLONE!"=="1" git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code >nul 2>&1
 
     REM Claude Code reads apps\skills\claude\* (injection `!`plannotator ... $ARGUMENTS``
     REM + allowed-tools, so /plannotator-* run with no permission prompt); Codex
@@ -1384,6 +1423,25 @@ if "!CLONE_OK!"=="1" (
     REM Vibe - no skills are copied to !VIBE_HOME! on Windows. The apps\vibe
     REM skills use a POSIX env-prefix that Vibe's PowerShell fallback cannot
     REM run; Vibe reads the shell-neutral core skills from ~/.agents/skills.
+
+    REM Qwen Code extension -> only when the qwen binary is on PATH (the
+    REM extension is installed THROUGH the binary, so a home dir alone is not
+    REM enough) and not opted out (#1178: a Qwen opt-out never installs).
+    REM Uninstall first: qwen refuses to install over an extension of the same
+    REM name. Best-effort - a failure prints a manual command and keeps going.
+    if "!SKIP_QWEN!"=="0" if exist "apps\qwen-code\qwen-extension.json" (
+        where qwen >nul 2>&1
+        if !ERRORLEVEL! equ 0 (
+            qwen extensions uninstall plannotator >nul 2>&1
+            qwen extensions install "%CD%\apps\qwen-code" --consent
+            if !ERRORLEVEL! equ 0 (
+                echo Installed the Qwen Code extension (plan review + /plannotator-* commands)
+            ) else (
+                echo Warning: the Qwen Code extension could not be installed. Re-run manually: 1>&2
+                echo   qwen extensions install %CD%\apps\qwen-code --consent 1>&2
+            )
+        )
+    )
 
     popd
 ) else (
@@ -1630,6 +1688,34 @@ if "!VIBE_AVAILABLE!"=="1" (
     )
 )
 
+REM The Qwen Code section prints only when Qwen Code was detected; without qwen
+REM on PATH or a Qwen home the installer says nothing about Qwen at all.
+if "!QWEN_AVAILABLE!"=="1" (
+    echo.
+    echo ==========================================
+    echo   QWEN CODE USERS
+    echo ==========================================
+    echo.
+    if "!SKIP_QWEN!"=="1" (
+        echo Qwen Code was detected, but the extension was skipped ^(!SKIP_QWEN_SOURCE!^).
+        echo No extension was installed or removed.
+    ) else if "!SKIP_SKILLS!"=="1" (
+        echo Qwen Code was detected, but skills were skipped ^(!SKIP_SKILLS_SOURCE!^), so
+        echo the extension source was not fetched and no extension was installed.
+    ) else (
+        where qwen >nul 2>&1
+        if !ERRORLEVEL! neq 0 (
+            echo Qwen Code was detected ^(!QWEN_HOME! exists^), but the qwen binary was
+            echo not found on PATH, so no extension was installed.
+            echo Install Qwen Code ^[npm install -g @qwen-code/qwen-code^] and re-run the installer.
+        ) else (
+            echo Restart Qwen Code. Plans open in your browser for review on
+            echo exit_plan_mode, and the /plannotator-review, /plannotator-annotate,
+            echo and /plannotator-last commands are ready.
+        )
+    )
+)
+
 echo.
 echo Test the install:
 echo   echo {"tool_input":{"plan":"# Test Plan\\n\\nHello world"}} ^| plannotator
@@ -1708,6 +1794,7 @@ if "!SKIP_GEMINI_FLAG!"=="1" call :AddInstallFlag skip-gemini
 if "!SKIP_KIRO_FLAG!"=="1" call :AddInstallFlag skip-kiro
 if "!SKIP_VIBE_FLAG!"=="1" call :AddInstallFlag skip-vibe
 if "!SKIP_OPENCODE_FLAG!"=="1" call :AddInstallFlag skip-opencode
+if "!SKIP_QWEN_FLAG!"=="1" call :AddInstallFlag skip-qwen
 if "!SKIP_SKILLS_FLAG!"=="1" call :AddInstallFlag skip-skills
 if not exist "!_CONFIG_DIR!" mkdir "!_CONFIG_DIR!" >nul 2>&1
 >"!_CONFIG_DIR!\install-flags.json.tmp" echo {"v":1,"flags":[!IFL!]}

@@ -75,7 +75,7 @@ describe("install.sh", () => {
     expect(script).toContain("git clone --depth 1 --filter=blob:none --sparse");
     // Sparse set extended to also fetch the command stubs from the checkout.
     expect(script).toContain(
-      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands",
+      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code",
     );
     expect(script).toContain("CLAUDE_SKILLS_DIR");
     expect(script).toContain("AGENTS_SKILLS_DIR");
@@ -166,6 +166,29 @@ describe("install.sh", () => {
     // The old command heredocs must be gone entirely.
     expect(script).not.toContain("COMMAND_EOF");
     expect(script).not.toContain("GEMINI_CMD_EOF");
+  });
+
+  test("installs the Qwen Code extension through the qwen binary from the checkout", () => {
+    // Detection is binary-on-PATH or a Qwen home; but the checkout block
+    // installs only when the BINARY is on PATH (a home dir alone is
+    // detection, not capability - the extension is installed through it)
+    // and not opted out (#1178).
+    expect(script).toContain("qwen_available=0");
+    expect(script).toContain('[ -d "${QWEN_HOME:-$HOME/.qwen}" ]');
+    expect(script).toContain(
+      'if command -v qwen >/dev/null 2>&1 && [ "$skip_qwen" -eq 0 ] && [ -f "apps/qwen-code/qwen-extension.json" ]; then',
+    );
+    // Uninstall first: qwen refuses to install over an extension of the same
+    // name, so an existing (backed-up) install is replaced, not failed.
+    expect(script).toContain("qwen extensions uninstall plannotator >/dev/null 2>&1 || true");
+    expect(script).toContain('qwen extensions install "$(pwd)/apps/qwen-code" --consent');
+    // Best-effort: a failure prints the manual command and keeps going.
+    expect(script).toContain("Installed the Qwen Code extension (plan review + /plannotator-* commands)");
+    expect(script).toContain("Warning: the Qwen Code extension could not be installed. Re-run manually:");
+    // Skip states are reported honestly (#1178).
+    expect(script).toContain("Qwen Code: detected, skipped (${skip_qwen_source}).");
+    expect(script).toContain("No extension was installed or removed.");
+    expect(script).toContain("Qwen Code was detected, but the extension was skipped (${skip_qwen_source}).");
   });
 
   test("auto-installs Kiro skills when ~/.kiro is detected (no flag)", () => {
@@ -402,7 +425,7 @@ describe("install.sh", () => {
     // Flags exist for Codex plus the two integrations where the mechanism
     // generalizes identically (detect -> write): Gemini and Kiro. OpenCode
     // gets a plain do-not-write switch (no detection leg).
-    for (const flag of ["--skip-codex)", "--skip-gemini)", "--skip-kiro)", "--skip-vibe)", "--skip-opencode)"]) {
+    for (const flag of ["--skip-codex)", "--skip-gemini)", "--skip-kiro)", "--skip-vibe)", "--skip-opencode)", "--skip-qwen)"]) {
       expect(script).toContain(flag);
     }
     // Env vars follow the existing PLANNOTATOR_SKIP_*_INSTALL naming.
@@ -411,6 +434,7 @@ describe("install.sh", () => {
     expect(script).toContain("PLANNOTATOR_SKIP_KIRO_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_VIBE_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_OPENCODE_INSTALL");
+    expect(script).toContain("PLANNOTATOR_SKIP_QWEN_INSTALL");
     // Config layer (M2): the skipInstall OBJECT is extracted first (awk,
     // character-indexed so single-line JSON works too) and per-agent keys
     // are matched only inside it - a "codex": true under some OTHER key can
@@ -427,7 +451,7 @@ describe("install.sh", () => {
     expect(script).toContain("continue # explicit false is a veto, never a skip");
     // skills rides the same loop: not an agent, but the same three layers
     // and the same skipInstall key region.
-    expect(script).toContain("for _agent in codex gemini kiro vibe opencode skills; do");
+    expect(script).toContain("for _agent in codex gemini kiro vibe opencode qwen skills; do");
     // The old whole-file grep form is gone.
     expect(script).not.toContain('grep -q \'"codex"[[:space:]]*:[[:space:]]*true\' "$_config_dir/config.json"');
     // Precedence by textual layering (later assignment wins): config grep,
@@ -492,8 +516,9 @@ describe("install.sh", () => {
     expect(configIdx).toBeGreaterThan(0);
     expect(envIdx).toBeGreaterThan(configIdx);
     expect(flagIdx).toBeGreaterThan(envIdx);
-    // Advertised in the usage text alongside the per-agent opt-outs.
-    expect(script).toContain("[--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-skills]");
+    // Advertised in the usage text alongside the per-agent opt-outs
+    // ([--skip-skills] wraps to the next line in the heredoc).
+    expect(script).toContain("[--skip-kiro] [--skip-vibe] [--skip-opencode] [--skip-qwen]");
     expect(script).toContain("PLANNOTATOR_SKIP_SKILLS_INSTALL; config key:");
   });
 
@@ -603,7 +628,7 @@ describe("install.ps1", () => {
   test("installs core skills via git sparse-checkout to claude + agents", () => {
     expect(script).toContain("git clone --depth 1 --filter=blob:none --sparse");
     expect(script).toContain(
-      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands",
+      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code",
     );
     expect(script).toContain("claudeSkillsDir");
     expect(script).toContain("agentsSkillsDir");
@@ -634,6 +659,20 @@ describe("install.ps1", () => {
     expect(script).toContain('Copy-Item -Force "apps\\gemini\\commands\\*.toml" $geminiCommandsDir');
     // No Gemini command heredocs remain.
     expect(script).not.toContain("GEMINI_CMD_EOF");
+  });
+
+  test("installs the Qwen Code extension through the qwen binary from the checkout", () => {
+    // Same capability rule as install.sh: the checkout block installs only
+    // when the BINARY is on PATH (a home dir alone is detection, not
+    // capability) and not opted out (#1178).
+    expect(script).toContain('$qwenAvailable = [bool](Get-Command qwen -ErrorAction SilentlyContinue) -or (Test-Path $qwenHome)');
+    expect(script).toContain(
+      'if ((Get-Command qwen -ErrorAction SilentlyContinue) -and -not $skipQwenResolved -and (Test-Path "apps\\qwen-code\\qwen-extension.json")) {',
+    );
+    expect(script).toContain("qwen extensions uninstall plannotator");
+    expect(script).toContain('qwen extensions install "$PWD\\apps\\qwen-code" --consent');
+    expect(script).toContain('Write-Host "Qwen Code: detected, skipped ($skipQwenSource)."');
+    expect(script).toContain("Qwen Code was detected, but the extension was skipped ($skipQwenSource).");
   });
 
   test("aggressively cleans up deprecated commands and stale skills on upgrade", () => {
@@ -734,11 +773,13 @@ describe("install.ps1", () => {
     expect(script).toContain("[switch]$SkipKiro");
     expect(script).toContain("[switch]$SkipVibe");
     expect(script).toContain("[switch]$SkipOpencode");
+    expect(script).toContain("[switch]$SkipQwen");
     expect(script).toContain("PLANNOTATOR_SKIP_CODEX_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_GEMINI_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_KIRO_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_VIBE_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_OPENCODE_INSTALL");
+    expect(script).toContain("PLANNOTATOR_SKIP_QWEN_INSTALL");
     // Config layer parses the real nested JSON (strict boolean check, like
     // verifyAttestation).
     expect(script).toContain("$cfg.skipInstall.codex -is [bool]");
@@ -746,6 +787,7 @@ describe("install.ps1", () => {
     expect(script).toContain("$cfg.skipInstall.kiro -is [bool]");
     expect(script).toContain("$cfg.skipInstall.vibe -is [bool]");
     expect(script).toContain("$cfg.skipInstall.opencode -is [bool]");
+    expect(script).toContain("$cfg.skipInstall.qwen -is [bool]");
     // Precedence by textual layering (later assignment wins): config, then
     // env var, then switch.
     const configIdx = script.indexOf('$skipCodexSource = "config skipInstall.codex"');
@@ -876,7 +918,7 @@ describe("install.cmd", () => {
   test("installs core skills via git sparse-checkout to claude + agents", () => {
     expect(script).toContain("git clone --depth 1 --filter=blob:none --sparse");
     expect(script).toContain(
-      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands",
+      "git sparse-checkout set apps/skills apps/kiro-cli apps/vibe apps/opencode-plugin/commands apps/gemini/commands apps/qwen-code",
     );
     expect(script).toContain("CLAUDE_SKILLS_DIR");
     expect(script).toContain("AGENTS_SKILLS_DIR");
@@ -1104,17 +1146,19 @@ describe("install.cmd", () => {
     expect(script).toContain('if /i "%~1"=="--skip-kiro"');
     expect(script).toContain('if /i "%~1"=="--skip-vibe"');
     expect(script).toContain('if /i "%~1"=="--skip-opencode"');
+    expect(script).toContain('if /i "%~1"=="--skip-qwen"');
     expect(script).toContain("PLANNOTATOR_SKIP_CODEX_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_GEMINI_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_KIRO_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_VIBE_INSTALL");
     expect(script).toContain("PLANNOTATOR_SKIP_OPENCODE_INSTALL");
+    expect(script).toContain("PLANNOTATOR_SKIP_QWEN_INSTALL");
     // Config layer (M2): the REAL JSON is parsed by PowerShell (strict
     // boolean check, matching install.ps1) instead of a line-oblivious
     // findstr - so a "codex": true under some OTHER key can never opt
     // anyone out and an explicit false inside skipInstall is honored.
     expect(script).toContain("$c.skipInstall.$k");
-    expect(script).toContain("@('codex','gemini','kiro','vibe','opencode','skills')");
+    expect(script).toContain("@('codex','gemini','kiro','vibe','opencode','qwen','skills')");
     expect(script).toContain("$v -is [bool] -and $v");
     expect(script).toContain("PLN_CONFIG_JSON");
     expect(script).toContain("skipInstall.codex");
@@ -1122,6 +1166,7 @@ describe("install.cmd", () => {
     expect(script).toContain("skipInstall.kiro");
     expect(script).toContain("skipInstall.vibe");
     expect(script).toContain("skipInstall.opencode");
+    expect(script).toContain("skipInstall.qwen");
     // The old whole-file findstr form is gone.
     expect(script).not.toContain('findstr /r /c:"\\"codex\\"');
     // Precedence by textual layering (later assignment wins): config, then
@@ -1161,6 +1206,21 @@ describe("install.cmd", () => {
     expect(script).toContain('if exist "%USERPROFILE%\\.gemini" if "!SKIP_GEMINI!"=="0"');
   });
 
+  test("installs the Qwen Code extension through the qwen binary from the checkout", () => {
+    // Same capability rule as install.sh: the checkout block installs only
+    // when the BINARY is on PATH (a home dir alone is detection, not
+    // capability) and not opted out (#1178).
+    expect(script).toContain('set "QWEN_AVAILABLE=0"');
+    expect(script).toContain('where qwen >nul 2>&1');
+    expect(script).toContain(
+      'if "!SKIP_QWEN!"=="0" if exist "apps\\qwen-code\\qwen-extension.json" (',
+    );
+    expect(script).toContain("qwen extensions uninstall plannotator >nul 2>&1");
+    expect(script).toContain('qwen extensions install "%CD%\\apps\\qwen-code" --consent');
+    expect(script).toContain("echo Qwen Code: detected, skipped ^(!SKIP_QWEN_SOURCE!^).");
+    expect(script).toContain("echo Qwen Code was detected, but the extension was skipped ^(!SKIP_QWEN_SOURCE!^).");
+  });
+
   test("--skip-skills: flag, env var, config key, precedence (#1201)", () => {
     expect(script).toContain('if /i "%~1"=="--skip-skills"');
     expect(script).toContain('set "SKIP_SKILLS_FLAG=0"');
@@ -1175,7 +1235,7 @@ describe("install.cmd", () => {
     expect(envIdx).toBeGreaterThan(configIdx);
     expect(flagIdx).toBeGreaterThan(envIdx);
     // Advertised in the usage text alongside the per-agent opt-outs.
-    expect(script).toContain("[--skip-opencode] [--skip-skills]");
+    expect(script).toContain("[--skip-opencode] [--skip-qwen] [--skip-skills]");
   });
 
   test("--skip-skills jumps past the clone without tripping the guard (#1201)", () => {
@@ -2233,6 +2293,8 @@ if [ "$1" = "clone" ]; then
   printf 'name: plannotator\\n' > "$dest/apps/skills/core/plannotator/SKILL.md"
   mkdir -p "$dest/apps/opencode-plugin/commands"
   printf 'stub\\n' > "$dest/apps/opencode-plugin/commands/plannotator-review.md"
+  mkdir -p "$dest/apps/qwen-code"
+  printf '{}\\n' > "$dest/apps/qwen-code/qwen-extension.json"
   exit 0
 fi
 if [ "$1" = "sparse-checkout" ]; then
@@ -2494,13 +2556,14 @@ describe.skipIf(process.platform === "win32" || !Bun.which("node"))(
 // universal. Every run is a full install into a temp HOME with a stubbed PATH;
 // the git shim supplies a local checkout, so nothing reaches the network.
 // ---------------------------------------------------------------------------
-type SummaryAgent = "pi" | "gemini" | "codex" | "kiro";
+type SummaryAgent = "pi" | "gemini" | "codex" | "kiro" | "qwen";
 
 const SUMMARY_HEADERS: Record<SummaryAgent, string> = {
   pi: "  PI USERS",
   gemini: "  GEMINI CLI USERS",
   codex: "  CODEX USERS",
   kiro: "  KIRO CLI USERS",
+  qwen: "  QWEN CODE USERS",
 };
 
 function runSummaryInstall(detected: SummaryAgent[], extraArgs: string[] = []) {
@@ -2514,6 +2577,9 @@ function runSummaryInstall(detected: SummaryAgent[], extraArgs: string[] = []) {
   // A no-op `pi` on PATH is exactly what the Pi detection leg checks; the
   // installer's `pi install` call against it succeeds without doing anything.
   if (detected.includes("pi")) writeFileSync(join(sandbox.stub, "pi"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
+  // A no-op `qwen` on PATH is what the Qwen detection leg checks; the
+  // installer's `qwen extensions ...` calls against it succeed as no-ops.
+  if (detected.includes("qwen")) writeFileSync(join(sandbox.stub, "qwen"), "#!/bin/bash\nexit 0\n", { mode: 0o755 });
   const r = runInstallSh(sandbox, ["--version", "v99.9.9", "--non-interactive", "--no-extras", ...extraArgs]);
   return { ...r, home: sandbox.home };
 }
@@ -2551,7 +2617,7 @@ describe.skipIf(process.platform === "win32" || !Bun.which("node"))(
     }
 
     test("all detected: every agent section prints, in the original order", () => {
-      const all: SummaryAgent[] = ["pi", "gemini", "codex", "kiro"];
+      const all: SummaryAgent[] = ["pi", "gemini", "codex", "kiro", "qwen"];
       const { code, out } = runSummaryInstall(all);
       expect(code).toBe(0);
       expectOnlySections(out, all);
@@ -2585,6 +2651,35 @@ describe.skipIf(process.platform === "win32" || !Bun.which("node"))(
       expect(out).toContain("Minimal install complete");
       expect(out).not.toContain(" USERS");
     });
+
+    test("qwen detected: the extension installs from the checkout and the section prints", () => {
+      const { code, out } = runSummaryInstall(["qwen"]);
+      expect(code).toBe(0);
+      expectOnlySections(out, ["qwen"]);
+      expect(out).toContain("Installed the Qwen Code extension (plan review + /plannotator-* commands)");
+      expect(out).toContain("Restart Qwen Code. Plans open in your browser for review on");
+    });
+
+    test("--skip-qwen: a detected qwen keeps its honest skipped section and installs nothing", () => {
+      const { code, out } = runSummaryInstall(["qwen"], ["--skip-qwen"]);
+      expect(code).toBe(0);
+      expectOnlySections(out, ["qwen"]);
+      expect(out).toContain("Qwen Code: detected, skipped (--skip-qwen).");
+      expect(out).toContain("Qwen Code was detected, but the extension was skipped (--skip-qwen).");
+      expect(out).not.toContain("Installed the Qwen Code extension");
+    });
+
+    test("qwen home without the binary: an honest no-extension section, never the restart banner", () => {
+      const sandbox = setupInstallSandbox({ gh: "pass-all", git: "sparse-unsupported" });
+      mkdirSync(join(sandbox.home, ".qwen"), { recursive: true });
+      const { code, out } = runInstallSh(sandbox, ["--version", "v99.9.9", "--non-interactive", "--no-extras"]);
+      expect(code).toBe(0);
+      expectOnlySections(out, ["qwen"]);
+      expect(out).toContain("binary was not found on PATH, so no extension was installed");
+      expect(out).toContain("npm install -g @qwen-code/qwen-code");
+      expect(out).not.toContain("Installed the Qwen Code extension");
+      expect(out).not.toContain("Restart Qwen Code");
+    });
   },
 );
 
@@ -2615,6 +2710,12 @@ describe.skipIf(process.platform === "win32" || !Bun.which("node"))(
       expect(code).toBe(0);
       // runSummaryInstall passes --version, --non-interactive and --no-extras.
       expect(readFlags(home)).toEqual({ v: 1, flags: [] });
+    });
+
+    test("--skip-qwen records the neutral id", () => {
+      const { code, home } = runSummaryInstall(["qwen"], ["--skip-qwen"]);
+      expect(code).toBe(0);
+      expect(readFlags(home)).toEqual({ v: 1, flags: ["skip-qwen"] });
     });
 
     test("the file lands in PLANNOTATOR_DATA_DIR when it is set", () => {
@@ -2649,7 +2750,7 @@ describe("install-flags.json is written by every installer", () => {
   test("install.ps1 and install.cmd record the same neutral ids after both exits", () => {
     const ps = readScript("install.ps1");
     const cmd = readScript("install.cmd");
-    for (const id of ["minimal", "no-minimal", "verify-attestation", "skip-attestation", "with-call-flow", "skip-codex", "skip-gemini", "skip-kiro", "skip-vibe", "skip-opencode", "skip-skills"]) {
+    for (const id of ["minimal", "no-minimal", "verify-attestation", "skip-attestation", "with-call-flow", "skip-codex", "skip-gemini", "skip-kiro", "skip-vibe", "skip-opencode", "skip-qwen", "skip-skills"]) {
       expect(ps).toContain(`$ids += "${id}"`);
       expect(cmd).toContain(`call :AddInstallFlag ${id}`);
     }

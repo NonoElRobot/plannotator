@@ -370,3 +370,54 @@ export function effortSelectOptions(models: readonly CatalogModel[], modelId: st
 export function modelLabel(models: readonly CatalogModel[], id: string): string {
   return models.find((m) => m.id === id)?.label ?? aliasLabel(id) ?? id;
 }
+
+/** The subset of one Qwen Code `modelProviders.openai[]` entry the catalog reads. */
+export interface QwenSettingsModel {
+  id?: string;
+  name?: string;
+}
+
+/**
+ * Build the Qwen catalog from `settings.json` (under $QWEN_HOME or ~/.qwen —
+ * the qwen CLI's own config, so no probe process is needed).
+ * `modelProviders.openai[]` lists the models the user configured for
+ * OpenAI-compatible endpoints — each entry's `id` is what the `qwen -m` flag
+ * selects; `model.name` is the model the CLI currently runs. Rows without a
+ * string `id` are skipped. The active model is marked default, and when it is
+ * not in the provider list (the built-in default model) it is offered anyway
+ * — it is what a session without a pick will run. No `reasoningEfforts`: the
+ * CLI applies the user's own global effort setting and reports no per-model
+ * levels.
+ */
+export function qwenCatalogFromSettings(settings: unknown): CatalogModel[] {
+  if (!settings || typeof settings !== "object") return [];
+  const root = settings as {
+    model?: { name?: unknown };
+    modelProviders?: { openai?: unknown };
+  };
+  const rows: CatalogModel[] = [];
+  const providers = root.modelProviders?.openai;
+  if (Array.isArray(providers)) {
+    for (const entry of providers) {
+      if (!entry || typeof entry !== "object") continue;
+      const model = entry as QwenSettingsModel;
+      if (typeof model.id !== "string" || !model.id) continue;
+      rows.push({
+        id: model.id,
+        label:
+          typeof model.name === "string" && model.name.trim() !== ""
+            ? model.name.trim()
+            : model.id,
+      });
+    }
+  }
+  const active = typeof root.model?.name === "string" ? root.model.name.trim() : "";
+  let defaultIndex = active ? rows.findIndex((r) => r.id === active) : -1;
+  if (active && defaultIndex === -1) {
+    rows.unshift({ id: active, label: active });
+    defaultIndex = 0;
+  }
+  if (defaultIndex === -1 && rows.length > 0) defaultIndex = 0;
+  if (defaultIndex === -1) return rows;
+  return rows.map((r, i) => (i === defaultIndex ? { ...r, default: true } : r));
+}

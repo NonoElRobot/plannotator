@@ -38,6 +38,16 @@ describe('connect snippets', () => {
     expect(goose.searchParams.getAll('arg')).toEqual(['inbox', 'mcp']);
   });
 
+  test('the Qwen Code snippet runs the stdio entry through qwen mcp add, keeping a spaced path one word', () => {
+    const panel = harnessPanel('qwen', ctx('/Users/a b/.local/bin/plannotator'));
+    expect(panel.artefacts[0]).toEqual({ kind: 'code', text: "qwen mcp add -s user plannotator-inbox '/Users/a b/.local/bin/plannotator' inbox mcp" });
+    const manual = panel.another?.body;
+    expect(manual?.kind).toBe('code');
+    if (manual?.kind === 'code') {
+      expect(JSON.parse(manual.text)).toEqual({ mcpServers: { 'plannotator-inbox': { command: '/Users/a b/.local/bin/plannotator', args: ['inbox', 'mcp'] } } });
+    }
+  });
+
   test('every harness has a panel, and every JSON snippet parses', () => {
     for (const harness of HARNESSES) {
       const panel = harnessPanel(harness.id, ctx('/opt/plannotator'));

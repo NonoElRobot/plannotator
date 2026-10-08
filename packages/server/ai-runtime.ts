@@ -11,6 +11,7 @@ import {
   type AIEndpoints,
   type PiSDKConfig,
   type PullSessionBridgeConfig,
+  type QwenSDKConfig,
   type SessionBridge,
   type SessionBridgeHost,
 } from "@plannotator/ai";
@@ -205,6 +206,27 @@ export async function createAIRuntime(options: CreateAIRuntimeOptions = {}): Pro
       }
     } catch {
       // OpenCode not available.
+    }
+
+    try {
+      await import("@plannotator/ai/providers/qwen-sdk");
+      const rawQwenPath = Bun.which("qwen");
+      if (rawQwenPath) {
+        const qwenPath = resolveWindowsCommandShim(rawQwenPath);
+        const provider = await createProvider({
+          type: "qwen-sdk",
+          cwd,
+          qwenExecutablePath: qwenPath,
+        } as QwenSDKConfig);
+        const providerId = registry.register(provider);
+        // Deferred like Pi: fetchModels only reads ~/.qwen/settings.json (no
+        // spawn), and a Qwen session spawns its own `qwen` and runs on the
+        // CLI's default model when none is picked, so it never waits on
+        // discovery either.
+        deferModelDiscovery(providerId, provider, { blockSession: false });
+      }
+    } catch {
+      // Qwen Code not available.
     }
   };
 
